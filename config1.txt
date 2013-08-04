@@ -1,10 +1,13 @@
-source http://195.235.198.107:3346/axis-cgi/mjpg/video.cgi?resolution=320x240
+#
+# Test config
+#
 
-destination /tmp
+# source http://195.235.198.107:3346/axis-cgi/mjpg/video.cgi?resolution=320x240
+source http://192.168.1.3:8080/?action=stream
 
-osc-port 8000
+osc-port 8001
 
-area-position 0 0
-area-size 100 100
-area-sensitivity 100 2000
-area-path /motion/1
+area 0 0 20 20 15.0 /motion/1
+area 150 80 20 20 15.0 /motion/2
+area 300 160 20 20 15.0 /motion/3
+

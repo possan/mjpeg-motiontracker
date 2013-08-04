@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
+#include <unistd.h>
 
 // http://stackoverflow.com/questions/4801933/how-to-parse-mjpeg-http-stream-within-c
 
@@ -23,10 +24,14 @@
 #define STATE_MAIN_HEADER 30
 #define STATE_FRAME_HEADER 36
 
+int debug_output_frame = 0;
 int g_state = STATE_MAIN_HEADER;
 int jpeg_frame_size = 0;
 int jpeg_frame_index = 0;
-long first_timestamp = 0;
+
+int fps_frame = 0;
+long fps_start = 0;
+
 int jpeg_frame_position = 0;
 int jpeg_num_headers = 0;
 int block_counter = 0;
@@ -34,6 +39,9 @@ char jpeg_filename[100];
 FILE *jpeg_file;
 unsigned char *jpeg_buffer;
 char headerline[1000] = { 0, };
+char stream_url[1000];
+int osc_port = 8000;
+int debug_image_written = false;
 
 int frame_width = 0;
 int frame_height = 0;
@@ -52,16 +60,61 @@ struct Area {
 	int width;
 	int height;
 	int value;
-	int treshold;
 	int trig;
 	float percent_motion;
 	float treshold_percent;
-	// float *average_bitmap;
-	// float *last_bitmap;
+	char *message;
+	float percent_history[100];
+	int trig_history[100];
 };
 
 int num_areas;
 Area *areas;
+
+void osc_init() {
+	printf("OSC: Using port %d\n", osc_port);
+}
+
+void osc_send(char *msg, float amt) {
+	printf("OSC: Sending message \"%s\" with value %1.1f\n", msg, amt);
+}
+
+void save_jpeg(unsigned char *image, char *filename) {
+	// bool ipl2jpeg(IplImage *frame, unsigned char **outbuffer, long unsigned int *outlen) {
+
+	// unsigned char *outdata = (uchar *) frame->imageData;
+	struct jpeg_compress_struct cinfo = {0};
+	struct jpeg_error_mgr jerr;
+	JSAMPROW row_ptr[1];
+	int row_stride;
+
+	FILE *fp = fopen(filename, "wb");
+
+	cinfo.err = jpeg_std_error(&jerr);
+	jpeg_create_compress(&cinfo);
+	jpeg_stdio_dest(&cinfo, fp);
+
+	cinfo.image_width = frame_width;
+	cinfo.image_height = frame_height;
+	cinfo.input_components = 3;
+	cinfo.in_color_space = JCS_RGB;
+	jpeg_set_quality(&cinfo, 99, FALSE);
+
+	jpeg_set_defaults(&cinfo);
+	jpeg_start_compress(&cinfo, TRUE);
+	row_stride = frame_width * 3;
+
+	while (cinfo.next_scanline < cinfo.image_height) {
+	    row_ptr[0] = image + (cinfo.next_scanline * row_stride);
+	    jpeg_write_scanlines(&cinfo, row_ptr, 1);
+	}
+
+	jpeg_finish_compress(&cinfo);
+	jpeg_destroy_compress(&cinfo);
+
+	fclose(fp);
+}
+
 
 void check_frame_size(int new_width, int new_height) {
 	if (new_width == frame_width && new_height == frame_height)
@@ -111,25 +164,87 @@ void check_frame_size(int new_width, int new_height) {
 	diff_frame = (unsigned char *)malloc(3 * frame_width * frame_height);
 }
 
+char *shades = (char *)" .,:oO#";
+
 void check_area_motion(Area *area) {
 	// printf("FRAME: check motion in area id #%d...\n", area->id);
+	area->trig = 0;
+
+	bool debug = false;// area->id == 1;
+
+	// for directional support compare diff against x/y-offset average images and pick the one with least diff.
 
 	int diff_sum = 0;
 	for(int j=0; j<area->height; j++) {
 		int o = ((area->y + j) * frame_width + area->x) * 3;
 		for(int i=0; i<area->width; i++) {
-			diff_sum += diff_frame[o];
-			o ++;
+			diff_sum += (diff_frame[o] + diff_frame[o+1] + diff_frame[o+2]) / 3;
+			// diff_sum += (current_frame[o] - average_frame[o]);
+			if (debug) {
+				int sh = (diff_frame[o] * 7) / 255;
+				printf("%c", shades[sh]);
+			}
+			o += 3;
 		}
+		if (debug) printf("\n");
 	}
 
 	area->value = diff_sum;
 	int diff_max = area->width * area->height * 255;
 	area->percent_motion = 100.0f * (float)diff_sum / (float)diff_max;
-	area->trig = area->percent_motion > area->treshold_percent;
 
-	if (area->trig)
-		printf("MOTION: area #%d - diff_sum=%6d %6d %6d percent=%1.2f %1.2f\n", area->id, diff_sum, diff_max, area->treshold, area->percent_motion, area->treshold_percent);
+	if (area->percent_motion > area->treshold_percent) {
+		area->trig = 1;
+	}
+
+	for(int i=99; i>=1; i--) {
+		area->percent_history[i] = area->percent_history[i-1];
+		area->trig_history[i] = area->trig_history[i-1];
+	}
+	area->percent_history[0] = area->percent_motion;
+	area->trig_history[0] = area->trig;
+
+	if (area->trig) {
+		printf("MOTION: area triggered - diff_sum=%6d/%6d percent=%1.2f %1.2f\n", diff_sum, diff_max, area->percent_motion, area->treshold_percent);
+		osc_send(area->message, area->percent_motion);
+	}
+}
+
+void highlight_areas(unsigned char *temp) {
+	for(int i=0; i<num_areas; i++) {
+		Area *area = (Area *)&areas[i];
+		for(int j=0; j<area->height; j++) {
+			int o = ((area->y + j) * frame_width + area->x) * 3;
+			int line2 = (area->height-1) - (area->height - 1) * area->treshold_percent / 100.0;
+			for(int i=0; i<area->width; i++) {
+				int c = (i * 1);
+				if (c > 99)
+					c = 99;
+				int line = (area->height-1) - (area->height - 1) * area->percent_history[c] / 100.0;
+				int trig = (area->trig_history[c]);
+				if (j == line) {
+						temp[o + 1] = 255;
+					if (trig) {
+						temp[o + 0] = 255;
+						temp[o + 2] = 255;
+					}
+				} else if (j > line2) {
+					temp[o + 1] = 120;
+					if (trig) {
+						temp[o + 1] = 200;
+						temp[o + 0] = 120;
+					}
+				} else {
+					temp[o + 1] = 60;
+					if (trig) {
+						temp[o + 1] = 120;
+						temp[o + 0] = 60;
+					}
+				}
+				o += 3;
+			}
+		}
+	}
 }
 
 void check_frame_motion() {
@@ -138,17 +253,31 @@ void check_frame_motion() {
 		Area *area = (Area *)&areas[i];
 		check_area_motion(area);
 	}
+
+
+	if (!debug_image_written) {
+		printf("DEBUG: Writing zone debug jpeg.\n");
+		// write a debug image containing the loaded zones.
+		unsigned char *temp = (unsigned char *)malloc(frame_width * frame_height * 3);
+		memcpy(temp, average_frame, frame_width * frame_height * 3);
+		highlight_areas(temp);
+		save_jpeg(temp, "output/debug.jpg");
+		free(temp);
+		debug_image_written = true;
+	}
 }
 
 void rotate_history() {
-	memcpy(history2_frame, history_frame, frame_width*frame_height*4);
-	memcpy(history_frame, current_frame, frame_width*frame_height*4);
-	memset(current_frame, 0, frame_width*frame_height*4);
+	memcpy(history4_frame, history3_frame, frame_width*frame_height*3);
+	memcpy(history3_frame, history2_frame, frame_width*frame_height*3);
+	memcpy(history2_frame, history_frame, frame_width*frame_height*3);
+	memcpy(history_frame, current_frame, frame_width*frame_height*3);
+	memset(current_frame, 0, frame_width*frame_height*3);
 }
 
 void update_average_and_diff() {
 	for(int o=0; o<frame_width*frame_height*3; o++) {
-		average_frame[o] = (history_frame[o] + history2_frame[o]) >> 1;
+		average_frame[o] = (history_frame[o] + history2_frame[o] + history3_frame[o] + history4_frame[o]) >> 2;
 	}
 
 	for(int o=0; o<frame_width*frame_height*3; o++) {
@@ -168,13 +297,6 @@ void on_headerline(char *buf) {
 }
 
 void on_frame(unsigned char *ptr, int len) {
-	/*
-	sprintf(jpeg_filename, "output/frame%08d.jpg", jpeg_frame_index);
-	printf("FRAME: %s\n", jpeg_filename);
-	FILE *f = fopen(jpeg_filename, "wb");
-	fwrite(ptr, 1, len, f);
-	fclose(f);
-	*/
 
 	JSAMPROW row_pointer[1];
 	struct jpeg_decompress_struct cinfo;
@@ -188,6 +310,7 @@ void on_frame(unsigned char *ptr, int len) {
 		printf("File does not seem to be a normal JPEG\n");
 		return;
 	}
+
 	jpeg_start_decompress(&cinfo);
 	int width = cinfo.output_width;
 	int height = cinfo.output_height;
@@ -195,19 +318,13 @@ void on_frame(unsigned char *ptr, int len) {
 	rotate_history();
 
 	int pixel_size = cinfo.output_components;
-	// printf("Proc: Image is %d by %d with %d components", width, height, pixel_size);
- 	int row_stride = cinfo.output_width * cinfo.output_components;
+	int row_stride = cinfo.output_width * cinfo.output_components;
 	JSAMPARRAY buffer;
 	buffer = (*cinfo.mem->alloc_sarray)((j_common_ptr) &cinfo, JPOOL_IMAGE, row_stride, 1);
 
-	// printf("row_stride = %d\n", row_stride);
-	// printf("cinfo.output_height = %d\n", cinfo.output_height);
-
 	int o = 0;
-
 	while (cinfo.output_scanline < cinfo.output_height) {
 		jpeg_read_scanlines(&cinfo, buffer, 1);
-		// put_scanline_someplace(buffer[0], row_stride);
 		int oi = 0;
 		int oo = cinfo.output_scanline * frame_width * 3;
 		unsigned char *bytebuffer = buffer[0];
@@ -229,17 +346,49 @@ void on_frame(unsigned char *ptr, int len) {
 		}
 	}
 
-	// jpeg_finish_decompress(&cinfo);
+	jpeg_finish_decompress(&cinfo);
 	jpeg_destroy_decompress(&cinfo);
-	// fclose(infile);
 
 	update_average_and_diff();
-	check_frame_motion();
+
+	if (jpeg_frame_index > 10) {
+		check_frame_motion();
+	} else {
+		printf("MOTION: Skipping frame #%d\n", jpeg_frame_index);
+	}
+
+	if (jpeg_frame_index % 10 == 0) {
+		for(int i=0; i<num_areas; i++) {
+			Area *area = (Area *)&areas[i];
+			printf("#%d %1.3f   ", area->id, area->percent_motion);
+		}
+		printf("\n");
+	}
+
+	if (fps_frame % 50 == 49) {
+		int t = (int)time(NULL);
+		float fps = (float)jpeg_frame_index / ((float)(t - fps_start));
+		printf("%1.1f FPS after %d frames.\n", fps, fps_frame);
+	}
+	fps_frame ++;
 
 	if (jpeg_frame_index % 100 == 99) {
-		int t = (int)time(NULL);
-		float fps = (float)jpeg_frame_index / ((float)(t - first_timestamp));
-		printf("%1.1f FPS after %d frames.\n", fps, jpeg_frame_index);
+		sprintf(jpeg_filename, "output/frame%04d.jpg", debug_output_frame % 50);
+		printf("FRAME: Saving input: %s\n", jpeg_filename);
+		FILE *f = fopen(jpeg_filename, "wb");
+		fwrite(ptr, 1, len, f);
+		fclose(f);
+
+		sprintf(jpeg_filename, "output/frame%04d-diff.jpg", debug_output_frame % 50);
+		printf("FRAME: Saving diff: %s\n", jpeg_filename);
+		highlight_areas(diff_frame);
+		save_jpeg(diff_frame, jpeg_filename);
+
+		sprintf(jpeg_filename, "output/frame%04d-avg.jpg", debug_output_frame % 50);
+		printf("FRAME: Saving average: %s\n", jpeg_filename);
+		save_jpeg(average_frame, jpeg_filename);
+
+		debug_output_frame ++;
 	}
 
 	jpeg_frame_index ++;
@@ -307,57 +456,110 @@ size_t write_data(void *ptr, size_t size, size_t nmemb, FILE *stream) {
 
 void stream(char *url) {
 	printf("STREAM: Downloading %s", url);
+	g_state = STATE_MAIN_HEADER;
+	fps_start = (int)time(NULL);
+	fps_frame = 0;
+	jpeg_num_headers = 0;
 	CURL *curl = curl_easy_init();
-	// FILE *fp = fopen("trans.txt","wb");
 	curl_easy_setopt(curl, CURLOPT_URL, url);
+	curl_easy_setopt(curl, CURLOPT_VERBOSE, 1);
 	curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_data);
-	// curl_easy_setopt(curl, CURLOPT_WRITEDATA, fp);
+	curl_easy_setopt(curl, CURLOPT_LOW_SPEED_LIMIT, 10000);
+	curl_easy_setopt(curl, CURLOPT_LOW_SPEED_TIME, 3);
 	CURLcode res = curl_easy_perform(curl);
+	printf("STREAM: Transfer done, status code %d\n", res);
 	curl_easy_cleanup(curl);
-	// fclose(fp);
 }
 
-int main() {
-	num_areas = 3;
-	areas = (Area *)malloc(sizeof(Area) * num_areas);
+void handle_config_token(char *token) {
+	printf("CONFIG: Token: \"%s\"\n", token);
+}
 
-	Area *area = (Area *)&areas[0];
-	area->id = 1;
-	area->x = 0;
-	area->y = 0;
-	area->width = 20;
-	area->height = 20;
-	area->value = 0;
-	area->treshold = 200;
-	area->treshold_percent = 5.0f;
+bool read_config(char *filename) {
+	printf("CONFIG: Loading \"%s\"...\n", filename);
+	char buf[200];
+	char buf2[200];
+	FILE *f = fopen(filename, "rt");
+	if (f == NULL) {
+		printf("CONFIG: Unable to read config.\n");
+		return false;
+	}
+	while(fgets(buf, 200, f) != NULL) {
+		// printf("CONFIG: Line: \"%s\"\n", buf);
+		char *word = NULL;
+		char *ptr = (char *)&buf;
 
-	area = (Area *)&areas[1];
-	area->id = 2;
-	area->x = 160 - 20;
-	area->y = 90 - 20;
-	area->width = 40;
-	area->height = 40;
-	area->value = 0;
-	area->treshold = 200;
-	area->treshold_percent = 5.0f;
+		char *cmd = strsep(&ptr, " \n\r");
+		if (cmd == NULL)
+			continue;
 
-	area = (Area *)&areas[2];
-	area->id = 3;
-	area->x = 320 - 20;
-	area->y = 180 - 20;
-	area->width = 20;
-	area->height = 20;
-	area->value = 0;
-	area->treshold = 200;
-	area->treshold_percent = 5.0f;
+		// printf("CONFIG: Command \"%s\"\n", cmd);
+		if (strcmp(cmd, "osc-port") == 0) {
+			char *str_port = strsep(&ptr, " \n\r");
+			if (str_port != NULL) {
+				osc_port = atoi(str_port);
+			}
+		}
+		else if (strcmp(cmd, "area") == 0) {
+			char *str_x = strsep(&ptr, " \n\r");
+			char *str_y = strsep(&ptr, " \n\r");
+			char *str_w = strsep(&ptr, " \n\r");
+			char *str_h = strsep(&ptr, " \n\r");
+			char *str_treshold = strsep(&ptr, " \n\r");
+			char *str_message = strsep(&ptr, " \n\r");
+			if (str_x != NULL && str_y != NULL && str_w != NULL && str_h != NULL && str_treshold != NULL && str_message != NULL) {
+				Area *area = (Area *)&areas[num_areas];
+				area->id = 0;
+				area->x = atoi(str_x);
+				area->y = atoi(str_y);
+				area->width = atoi(str_w);
+				area->height = atoi(str_h);
+				area->value = 0;
+				area->treshold_percent = atof(str_treshold);
+				area->message = strdup(str_message);
+				num_areas ++;
+				printf("CONFIG: Creating area #%d at %d,%d size %dx%d treshold %1.1f, message \"%s\"\n",
+					num_areas,
+					area->x,
+					area->y,
+					area->width,
+					area->height,
+					area->treshold_percent,
+					area->message);
+			}
+		}
+		else if (strcmp(cmd, "source") == 0) {
+			char *str_url = strsep(&ptr, " \n\r");
+			if (str_url != NULL) {
+				strcpy(stream_url, str_url);
+			}
+		}
+	}
+	fclose(f);
+	return true;
+}
+
+int main(int argc, char *argv[]) {
+
+	if (argc != 2) {
+		printf("Syntax: mm [config.txt]");
+		return 1;
+	}
+
+	areas = (Area *)malloc(sizeof(Area) * 100);
+	num_areas = 0;
+
+	if (!read_config(argv[1])) {
+		return 1;
+	}
+
+	osc_init();
 
 	jpeg_buffer = (unsigned char *)malloc(5*1024*1024);
-	first_timestamp = (int)time(NULL);
 	while(true) {
-		g_state = STATE_MAIN_HEADER;
-		jpeg_num_headers = 0;
-		// stream("http://195.235.198.107:3346/axis-cgi/mjpg/video.cgi?resolution=320x240");
-		stream("http://192.168.1.3:8080/?action=stream");
+		stream(stream_url);
+		printf("Waiting a bit before reconnecting...\n");
+		sleep(3);
 	}
 	free(jpeg_buffer);
 }

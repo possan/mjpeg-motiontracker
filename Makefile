@@ -4,4 +4,4 @@ mm: mm.cpp
 	gcc -o mm mm.cpp -ljpeg -lcurl
 
 test: mm
-	./mm config.txt
+	./mm config1.txt
