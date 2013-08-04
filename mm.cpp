@@ -4,6 +4,11 @@
 #include <stdio.h>
 #include <string.h>
 #include <unistd.h>
+#include <sys/types.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <netinet/ip.h>
+#include <arpa/inet.h>
 
 // http://stackoverflow.com/questions/4801933/how-to-parse-mjpeg-http-stream-within-c
 
@@ -40,7 +45,6 @@ FILE *jpeg_file;
 unsigned char *jpeg_buffer;
 char headerline[1000] = { 0, };
 char stream_url[1000];
-int osc_port = 8000;
 int debug_image_written = false;
 
 int frame_width = 0;
@@ -71,12 +75,77 @@ struct Area {
 int num_areas;
 Area *areas;
 
+char osc_ip[100] = "127.0.0.1";
+int osc_port = 8000;
+int osc_socket;
+struct sockaddr_in si_me;
+
 void osc_init() {
-	printf("OSC: Using port %d\n", osc_port);
+	printf("OSC: Using host \"%s\", port %d\n", osc_ip, osc_port);
+	osc_socket = socket(AF_INET, SOCK_DGRAM, 0);
+	memset((char *) &si_me, 0, sizeof(si_me));
+	si_me.sin_family = AF_INET;
+    si_me.sin_port = htons(osc_port);
+    si_me.sin_addr.s_addr = htonl(INADDR_ANY);
+	if (inet_aton(osc_ip, &si_me.sin_addr)==0) {
+		printf("OSC: Can't resolve ip.\n");
+	}
 }
 
 void osc_send(char *msg, float amt) {
 	printf("OSC: Sending message \"%s\" with value %1.1f\n", msg, amt);
+
+    unsigned char msgbuf[100];
+    memset(msgbuf, 0, 100);
+
+    // strcpy((char *)&msgbuf, "hej\n");
+
+    int o = 0;
+
+    memcpy(msgbuf+o, msg, strlen(msg));
+    o += strlen(msg);
+
+    o += 4 - (o % 4);
+
+    char *typestring = ",f";
+
+    memcpy(msgbuf+o, typestring, strlen(typestring));
+    o += strlen(typestring);
+
+    o += 4 - (o % 4);
+
+    char minibuf[4];
+    memcpy((char *)&minibuf, (unsigned char *)&amt, 4);
+
+    msgbuf[o] = minibuf[3];
+    msgbuf[o+1] = minibuf[2];
+    msgbuf[o+2] = minibuf[1];
+    msgbuf[o+3] = minibuf[0];
+    // memcpy(msgbuf+o, (unsigned char *)&amt, 4);
+    o += 4;
+
+    // o += 4 - (o % 4);
+
+    /*
+    for(int i=0; i<o; i++) {
+    	char c = msgbuf[i];
+    	printf("%02X ", c);
+    }
+    printf("\n");
+
+    for(int i=0; i<o; i++) {
+    	char c = msgbuf[i];
+    	if (c > 32 && c < 128)
+    		printf("%C  ", c);
+		else
+    		printf("?  ");
+    }
+    printf("\n");
+    */
+
+	if (sendto(osc_socket, (const char *)msgbuf, o, 0, (sockaddr*)&si_me, sizeof(si_me)) == -1) {
+		printf("OSC: Failed to send.\n");
+	}
 }
 
 void save_jpeg(unsigned char *image, char *filename) {
@@ -494,9 +563,11 @@ bool read_config(char *filename) {
 			continue;
 
 		// printf("CONFIG: Command \"%s\"\n", cmd);
-		if (strcmp(cmd, "osc-port") == 0) {
+		if (strcmp(cmd, "osc") == 0) {
+			char *str_host = strsep(&ptr, " \n\r");
 			char *str_port = strsep(&ptr, " \n\r");
-			if (str_port != NULL) {
+			if (str_host != NULL && str_port != NULL) {
+				strcpy(osc_ip, str_host);
 				osc_port = atoi(str_port);
 			}
 		}
