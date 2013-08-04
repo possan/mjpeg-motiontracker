@@ -26,6 +26,7 @@
 int g_state = STATE_MAIN_HEADER;
 int jpeg_frame_size = 0;
 int jpeg_frame_index = 0;
+long first_timestamp = 0;
 int jpeg_frame_position = 0;
 int jpeg_num_headers = 0;
 int block_counter = 0;
@@ -34,23 +35,146 @@ FILE *jpeg_file;
 unsigned char *jpeg_buffer;
 char headerline[1000] = { 0, };
 
+int frame_width = 0;
+int frame_height = 0;
+unsigned char *history4_frame = NULL;
+unsigned char *history3_frame = NULL;
+unsigned char *history2_frame = NULL;
+unsigned char *history_frame = NULL;
+unsigned char *current_frame = NULL;
+unsigned char *average_frame = NULL;
+unsigned char *diff_frame = NULL;
+
+struct Area {
+	int id;
+	int x;
+	int y;
+	int width;
+	int height;
+	int value;
+	int treshold;
+	int trig;
+	float percent_motion;
+	float treshold_percent;
+	// float *average_bitmap;
+	// float *last_bitmap;
+};
+
+int num_areas;
+Area *areas;
+
+void check_frame_size(int new_width, int new_height) {
+	if (new_width == frame_width && new_height == frame_height)
+		return;
+
+	printf("FRAME: resize buffers to %d x %d\n", new_width, new_height);
+
+	frame_width = new_width;
+	frame_height = new_height;
+
+	if (history4_frame != NULL) {
+		free(history4_frame);
+		history4_frame = NULL;
+	}
+
+	if (history3_frame != NULL) {
+		free(history3_frame);
+		history3_frame = NULL;
+	}
+
+	if (history_frame != NULL) {
+		free(history_frame);
+		history_frame = NULL;
+	}
+
+	if (current_frame != NULL) {
+		free(current_frame);
+		current_frame = NULL;
+	}
+
+	if (average_frame != NULL) {
+		free(average_frame);
+		average_frame = NULL;
+	}
+
+	if (diff_frame != NULL) {
+		free(diff_frame);
+		diff_frame = NULL;
+	}
+
+	history4_frame = (unsigned char *)malloc(3 * frame_width * frame_height);
+	history3_frame = (unsigned char *)malloc(3 * frame_width * frame_height);
+	history2_frame = (unsigned char *)malloc(3 * frame_width * frame_height);
+	history_frame = (unsigned char *)malloc(3 * frame_width * frame_height);
+	current_frame = (unsigned char *)malloc(3 * frame_width * frame_height);
+	average_frame = (unsigned char *)malloc(3 * frame_width * frame_height);
+	diff_frame = (unsigned char *)malloc(3 * frame_width * frame_height);
+}
+
+void check_area_motion(Area *area) {
+	// printf("FRAME: check motion in area id #%d...\n", area->id);
+
+	int diff_sum = 0;
+	for(int j=0; j<area->height; j++) {
+		int o = ((area->y + j) * frame_width + area->x) * 3;
+		for(int i=0; i<area->width; i++) {
+			diff_sum += diff_frame[o];
+			o ++;
+		}
+	}
+
+	area->value = diff_sum;
+	int diff_max = area->width * area->height * 255;
+	area->percent_motion = 100.0f * (float)diff_sum / (float)diff_max;
+	area->trig = area->percent_motion > area->treshold_percent;
+
+	if (area->trig)
+		printf("MOTION: area #%d - diff_sum=%6d %6d %6d percent=%1.2f %1.2f\n", area->id, diff_sum, diff_max, area->treshold, area->percent_motion, area->treshold_percent);
+}
+
+void check_frame_motion() {
+	// printf("FRAME: check motion...\n");
+	for(int i=0; i<num_areas; i++) {
+		Area *area = (Area *)&areas[i];
+		check_area_motion(area);
+	}
+}
+
+void rotate_history() {
+	memcpy(history2_frame, history_frame, frame_width*frame_height*4);
+	memcpy(history_frame, current_frame, frame_width*frame_height*4);
+	memset(current_frame, 0, frame_width*frame_height*4);
+}
+
+void update_average_and_diff() {
+	for(int o=0; o<frame_width*frame_height*3; o++) {
+		average_frame[o] = (history_frame[o] + history2_frame[o]) >> 1;
+	}
+
+	for(int o=0; o<frame_width*frame_height*3; o++) {
+		diff_frame[o] = abs(current_frame[o] - average_frame[o]);
+	}
+}
+
 void on_headerline(char *buf) {
-	printf("HEADER: %s\n", buf);
+	// printf("HEADER: %s\n", buf);
 	if (strncmp(buf, "Content-Length:", 15) == 0) {
 		jpeg_frame_size = atoi(buf + 16);
-		printf("HEADER: Got content length = %d bytes\n", jpeg_frame_size);
+		// printf("HEADER: Got content length = %d bytes\n", jpeg_frame_size);
 	}
 	if (strncmp(buf, "Content-Type:", 13) == 0) {
-		printf("HEADER: Got content type = %s\n", buf + 14);
+		// printf("HEADER: Got content type = %s\n", buf + 14);
 	}
 }
 
 void on_frame(unsigned char *ptr, int len) {
+	/*
 	sprintf(jpeg_filename, "output/frame%08d.jpg", jpeg_frame_index);
 	printf("FRAME: %s\n", jpeg_filename);
 	FILE *f = fopen(jpeg_filename, "wb");
 	fwrite(ptr, 1, len, f);
 	fclose(f);
+	*/
 
 	JSAMPROW row_pointer[1];
 	struct jpeg_decompress_struct cinfo;
@@ -67,28 +191,58 @@ void on_frame(unsigned char *ptr, int len) {
 	jpeg_start_decompress(&cinfo);
 	int width = cinfo.output_width;
 	int height = cinfo.output_height;
+	check_frame_size(width, height);
+	rotate_history();
+
 	int pixel_size = cinfo.output_components;
-	printf("Proc: Image is %d by %d with %d components", width, height, pixel_size);
-
- 	/* JSAMPLEs per row in output buffer */
+	// printf("Proc: Image is %d by %d with %d components", width, height, pixel_size);
  	int row_stride = cinfo.output_width * cinfo.output_components;
-
 	JSAMPARRAY buffer;
 	buffer = (*cinfo.mem->alloc_sarray)((j_common_ptr) &cinfo, JPOOL_IMAGE, row_stride, 1);
 
-	printf("row_stride = %d\n", row_stride);
-	printf("cinfo.output_height = %d\n", cinfo.output_height);
+	// printf("row_stride = %d\n", row_stride);
+	// printf("cinfo.output_height = %d\n", cinfo.output_height);
+
+	int o = 0;
 
 	while (cinfo.output_scanline < cinfo.output_height) {
-		(void) jpeg_read_scanlines(&cinfo, buffer, 1);
+		jpeg_read_scanlines(&cinfo, buffer, 1);
 		// put_scanline_someplace(buffer[0], row_stride);
-
-		
+		int oi = 0;
+		int oo = cinfo.output_scanline * frame_width * 3;
+		unsigned char *bytebuffer = buffer[0];
+		for(int c=0; c<cinfo.output_width; c++) {
+			if (cinfo.output_components == 3) {
+				// R
+				current_frame[oo] = bytebuffer[oi];
+				oi ++;
+				oo ++;
+				// G
+				current_frame[oo] = bytebuffer[oi];
+				oi ++;
+				oo ++;
+				// B
+				current_frame[oo] = bytebuffer[oi];
+				oi ++;
+				oo ++;
+			}
+		}
 	}
 
 	// jpeg_finish_decompress(&cinfo);
 	jpeg_destroy_decompress(&cinfo);
 	// fclose(infile);
+
+	update_average_and_diff();
+	check_frame_motion();
+
+	if (jpeg_frame_index % 100 == 99) {
+		int t = (int)time(NULL);
+		float fps = (float)jpeg_frame_index / ((float)(t - first_timestamp));
+		printf("%1.1f FPS after %d frames.\n", fps, jpeg_frame_index);
+	}
+
+	jpeg_frame_index ++;
 }
 
 
@@ -140,7 +294,6 @@ size_t write_data(void *ptr, size_t size, size_t nmemb, FILE *stream) {
 				g_state = STATE_FRAME_HEADER;
 				memset(headerline, 0, 1000);
 				jpeg_frame_position = 0;
-				jpeg_frame_index ++;
 				jpeg_num_headers = 0;
 			}
 		}
@@ -165,7 +318,41 @@ void stream(char *url) {
 }
 
 int main() {
+	num_areas = 3;
+	areas = (Area *)malloc(sizeof(Area) * num_areas);
+
+	Area *area = (Area *)&areas[0];
+	area->id = 1;
+	area->x = 0;
+	area->y = 0;
+	area->width = 20;
+	area->height = 20;
+	area->value = 0;
+	area->treshold = 200;
+	area->treshold_percent = 5.0f;
+
+	area = (Area *)&areas[1];
+	area->id = 2;
+	area->x = 160 - 20;
+	area->y = 90 - 20;
+	area->width = 40;
+	area->height = 40;
+	area->value = 0;
+	area->treshold = 200;
+	area->treshold_percent = 5.0f;
+
+	area = (Area *)&areas[2];
+	area->id = 3;
+	area->x = 320 - 20;
+	area->y = 180 - 20;
+	area->width = 20;
+	area->height = 20;
+	area->value = 0;
+	area->treshold = 200;
+	area->treshold_percent = 5.0f;
+
 	jpeg_buffer = (unsigned char *)malloc(5*1024*1024);
+	first_timestamp = (int)time(NULL);
 	while(true) {
 		g_state = STATE_MAIN_HEADER;
 		jpeg_num_headers = 0;
