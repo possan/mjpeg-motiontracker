@@ -93,7 +93,7 @@ void osc_init() {
 }
 
 void osc_send(char *msg, float amt) {
-	printf("OSC: Sending message \"%s\" with value %1.1f\n", msg, amt);
+	// printf("OSC: Sending message \"%s\" with value %1.1f\n", msg, amt);
 
     unsigned char msgbuf[100];
     memset(msgbuf, 0, 100);
@@ -274,7 +274,7 @@ void check_area_motion(Area *area) {
 	area->trig_history[0] = area->trig;
 
 	if (area->trig) {
-		printf("MOTION: area triggered - diff_sum=%6d/%6d percent=%1.2f %1.2f\n", diff_sum, diff_max, area->percent_motion, area->treshold_percent);
+		// printf("MOTION: area triggered - diff_sum=%6d/%6d percent=%1.2f %1.2f\n", diff_sum, diff_max, area->percent_motion, area->treshold_percent);
 		osc_send(area->message, area->percent_motion);
 	}
 }
@@ -346,7 +346,8 @@ void rotate_history() {
 
 void update_average_and_diff() {
 	for(int o=0; o<frame_width*frame_height*3; o++) {
-		average_frame[o] = (history_frame[o] + history2_frame[o] + history3_frame[o] + history4_frame[o]) >> 2;
+		// average_frame[o] = (history_frame[o] + history2_frame[o] + history3_frame[o] + history4_frame[o]) >> 2;
+		average_frame[o] = (history_frame[o] + history2_frame[o]) >> 1;// + history3_frame[o] + history4_frame[o]) >> 2;
 	}
 
 	for(int o=0; o<frame_width*frame_height*3; o++) {
@@ -426,13 +427,16 @@ void on_frame(unsigned char *ptr, int len) {
 		printf("MOTION: Skipping frame #%d\n", jpeg_frame_index);
 	}
 
-	if (jpeg_frame_index % 10 == 0) {
-		for(int i=0; i<num_areas; i++) {
-			Area *area = (Area *)&areas[i];
-			printf("#%d %1.3f   ", area->id, area->percent_motion);
-		}
-		printf("\n");
+	// if (jpeg_frame_index % 10 == 0) {
+	for(int i=0; i<num_areas; i++) {
+		Area *area = (Area *)&areas[i];
+		if (area->trig)
+			printf("\x1B[32m%3.2f %%   ", area->percent_motion);
+		else
+			printf("\x1B[31m%3.2f %%   ", area->percent_motion);
 	}
+	printf("\x1B[37m\n");
+	// }
 
 	if (fps_frame % 50 == 49) {
 		int t = (int)time(NULL);
