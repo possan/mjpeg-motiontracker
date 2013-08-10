@@ -34,6 +34,8 @@ int g_state = STATE_MAIN_HEADER;
 int jpeg_frame_size = 0;
 int jpeg_frame_index = 0;
 
+int jpeg_every = 1;
+
 int fps_frame = 0;
 long fps_start = 0;
 
@@ -323,7 +325,6 @@ void check_frame_motion() {
 		check_area_motion(area);
 	}
 
-
 	if (!debug_image_written) {
 		printf("DEBUG: Writing zone debug jpeg.\n");
 		// write a debug image containing the loaded zones.
@@ -366,7 +367,7 @@ void on_headerline(char *buf) {
 	}
 }
 
-void on_frame(unsigned char *ptr, int len) {
+void decode_into_current(unsigned char *ptr, int len) {
 
 	JSAMPROW row_pointer[1];
 	struct jpeg_decompress_struct cinfo;
@@ -436,6 +437,15 @@ void on_frame(unsigned char *ptr, int len) {
 			printf("\x1B[31m%3.2f %%   ", area->percent_motion);
 	}
 	printf("\x1B[37m\n");
+
+}
+
+void on_frame(unsigned char *ptr, int len) {
+
+	if (jpeg_frame_index % jpeg_every == 0) {
+		decode_into_current(ptr, len);
+	}
+
 	// }
 
 	if (fps_frame % 50 == 49) {
@@ -607,6 +617,13 @@ bool read_config(char *filename) {
 			char *str_url = strsep(&ptr, " \n\r");
 			if (str_url != NULL) {
 				strcpy(stream_url, str_url);
+			}
+		}
+		else if (strcmp(cmd, "every") == 0) {
+			char *str_every = strsep(&ptr, " \n\r");
+			if (str_every != NULL) {
+				jpeg_every = atoi(str_every);
+				printf("CONFIG: Only using every %d frame.\n", jpeg_every);
 			}
 		}
 	}
