@@ -5,3 +5,6 @@ mm: mm.cpp
 
 clean:
 	rm -f mm
+
+install:
+	cp mm /usr/local/bin/mm
