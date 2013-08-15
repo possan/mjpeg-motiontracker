@@ -348,7 +348,8 @@ void rotate_history() {
 void update_average_and_diff() {
     for(int o=0; o<frame_width*frame_height*3; o++) {
         // average_frame[o] = (history_frame[o] + history2_frame[o] + history3_frame[o] + history4_frame[o]) >> 2;
-        average_frame[o] = (history_frame[o] + history2_frame[o]) >> 1;// + history3_frame[o] + history4_frame[o]) >> 2;
+        // average_frame[o] = (history_frame[o] + history2_frame[o]) >> 1;// + history3_frame[o] + history4_frame[o]) >> 2;
+        average_frame[o] = (history_frame[o] + history2_frame[o] + history3_frame[o] + history4_frame[o]) >> 2;
     }
 
     for(int o=0; o<frame_width*frame_height*3; o++) {
