@@ -9,7 +9,7 @@ every 2
 
 osc 127.0.0.1 8000
 
-# area 0 0 20 20 5.0 /motion/1
-area 150 80 20 20 5.0 /motion/2
-# area 300 160 20 20 5.0 /motion/3
+area 0 0 20 20 5.0 /motion/1 1000
+area 150 80 20 20 5.0 /motion/2 2000
+area 300 160 20 20 5.0 /motion/3 3000
 

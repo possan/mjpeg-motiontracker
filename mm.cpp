@@ -1,14 +1,21 @@
-#include <curl/curl.h>
-#include <jpeglib.h>
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
+#include <curl/curl.h>
+#include <jpeglib.h>
 #include <unistd.h>
+#include <sys/time.h>
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <netinet/ip.h>
 #include <arpa/inet.h>
+#ifdef __MACH__
+#include <mach/clock.h>
+#include <mach/mach.h>
+#else
+#include <time.h>
+#endif
 
 // http://stackoverflow.com/questions/4801933/how-to-parse-mjpeg-http-stream-within-c
 
@@ -72,6 +79,8 @@ struct Area {
     char *message;
     float percent_history[100];
     int trig_history[100];
+    double lasttrig;
+    double mininterval;
 };
 
 int num_areas;
@@ -81,6 +90,22 @@ char osc_ip[100] = "127.0.0.1";
 int osc_port = 8000;
 int osc_socket;
 struct sockaddr_in si_me;
+
+double current_time() {
+    struct timespec ts;
+#ifdef __MACH__
+    clock_serv_t cclock;
+    mach_timespec_t mts;
+    host_get_clock_service(mach_host_self(), CALENDAR_CLOCK, &cclock);
+    clock_get_time(cclock, &mts);
+    mach_port_deallocate(mach_task_self(), cclock);
+    ts.tv_sec = mts.tv_sec;
+    ts.tv_nsec = mts.tv_nsec;
+#else
+    clock_gettime(CLOCK_REALTIME, &ts);
+#endif
+    return (double)ts.tv_sec + (double)ts.tv_nsec / 1000000000.0;
+}
 
 void osc_init() {
     printf("OSC: Using host \"%s\", port %d\n", osc_ip, osc_port);
@@ -265,7 +290,11 @@ void check_area_motion(Area *area) {
     area->percent_motion = 100.0f * (float)diff_sum / (float)diff_max;
 
     if (area->percent_motion > area->treshold_percent) {
-        area->trig = 1;
+        double t = current_time();
+        if (t > area->lasttrig + area->mininterval) {
+            area->trig = 1;
+            area->lasttrig = t;
+        }
     }
 
     for(int i=99; i>=1; i--) {
@@ -433,9 +462,12 @@ void decode_into_current(unsigned char *ptr, int len) {
     for(int i=0; i<num_areas; i++) {
         Area *area = (Area *)&areas[i];
         if (area->trig)
-            printf("\x1B[32m%3.2f %%   ", area->percent_motion);
+            printf("\x1B[32m");
+        else if (area->percent_motion > area->treshold_percent)
+            printf("\x1B[33m");
         else
-            printf("\x1B[31m%3.2f %%   ", area->percent_motion);
+            printf("\x1B[31m");
+        printf("%3.2f %%   ", area->percent_motion);
     }
     printf("\x1B[37m\n");
 
@@ -599,6 +631,7 @@ bool read_config(char *filename) {
             char *str_h = strsep(&ptr, " \n\r");
             char *str_treshold = strsep(&ptr, " \n\r");
             char *str_message = strsep(&ptr, " \n\r");
+            char *str_mininterval = strsep(&ptr, " \n\r");
             if (str_x != NULL && str_y != NULL && str_w != NULL && str_h != NULL && str_treshold != NULL && str_message != NULL) {
                 Area *area = (Area *)&areas[num_areas];
                 area->id = 0;
@@ -609,15 +642,18 @@ bool read_config(char *filename) {
                 area->value = 0;
                 area->treshold_percent = atof(str_treshold);
                 area->message = strdup(str_message);
+                area->mininterval = (double)atoi(str_mininterval) / 1000.0;
+                area->lasttrig = 0.0;
                 num_areas ++;
-                printf("CONFIG: Creating area #%d at %d,%d size %dx%d treshold %1.1f, message \"%s\"\n",
+                printf("CONFIG: Creating area #%d at %d,%d size %dx%d treshold %1.1f, message \"%s\", min interval %1.3f s.\n",
                     num_areas,
                     area->x,
                     area->y,
                     area->width,
                     area->height,
                     area->treshold_percent,
-                    area->message);
+                    area->message,
+                    area->mininterval);
             }
         }
         else if (strcmp(cmd, "source") == 0) {
