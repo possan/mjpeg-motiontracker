@@ -5,6 +5,8 @@
 # source http://195.235.198.107:3346/axis-cgi/mjpg/video.cgi?resolution=320x240
 source http://192.168.1.31:8080/?action=stream
 
+every 2
+
 osc 127.0.0.1 8000
 
 # area 0 0 20 20 5.0 /motion/1

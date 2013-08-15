@@ -109,7 +109,7 @@ void osc_send(char *msg, float amt) {
 
     o += 4 - (o % 4);
 
-    char *typestring = ",f";
+    char *typestring = (char *)",f";
 
     memcpy(msgbuf+o, typestring, strlen(typestring));
     o += strlen(typestring);
@@ -169,7 +169,7 @@ void save_jpeg(unsigned char *image, char *filename) {
     cinfo.image_height = frame_height;
     cinfo.input_components = 3;
     cinfo.in_color_space = JCS_RGB;
-    jpeg_set_quality(&cinfo, 99, FALSE);
+    jpeg_set_quality(&cinfo, 95, FALSE);
 
     jpeg_set_defaults(&cinfo);
     jpeg_start_compress(&cinfo, TRUE);
@@ -331,7 +331,7 @@ void check_frame_motion() {
         unsigned char *temp = (unsigned char *)malloc(frame_width * frame_height * 3);
         memcpy(temp, average_frame, frame_width * frame_height * 3);
         highlight_areas(temp);
-        save_jpeg(temp, "output/debug.jpg");
+        save_jpeg(temp, (char *)"output/debug.jpg");
         free(temp);
         debug_image_written = true;
     }
@@ -446,32 +446,38 @@ void on_frame(unsigned char *ptr, int len) {
         decode_into_current(ptr, len);
     }
 
-    // }
-
-    if (fps_frame % 50 == 49) {
+    if ((fps_frame % 50) == 49) {
         int t = (int)time(NULL);
         float fps = (float)jpeg_frame_index / ((float)(t - fps_start));
         printf("%1.1f FPS after %d frames.\n", fps, fps_frame);
     }
     fps_frame ++;
 
-    if (jpeg_frame_index % 100 == 99) {
-        sprintf(jpeg_filename, "output/frame%04d.jpg", debug_output_frame % 50);
+    if ((jpeg_frame_index % 100) == 30) {
+        // sprintf(jpeg_filename, "output/frame%04d.jpg", debug_output_frame % 50);
+        sprintf(jpeg_filename, "output/frame.jpg");
         printf("FRAME: Saving input: %s\n", jpeg_filename);
         FILE *f = fopen(jpeg_filename, "wb");
         fwrite(ptr, 1, len, f);
         fclose(f);
+    }
 
-        sprintf(jpeg_filename, "output/frame%04d-diff.jpg", debug_output_frame % 50);
+    if ((jpeg_frame_index % 100) == 60) {
+        // sprintf(jpeg_filename, "output/frame%04d-diff.jpg", debug_output_frame % 50);
+        sprintf(jpeg_filename, "output/frame-diff.jpg");
         printf("FRAME: Saving diff: %s\n", jpeg_filename);
         highlight_areas(diff_frame);
         save_jpeg(diff_frame, jpeg_filename);
+    }
 
-        sprintf(jpeg_filename, "output/frame%04d-avg.jpg", debug_output_frame % 50);
+    if ((jpeg_frame_index % 100) == 90) {
+        // sprintf(jpeg_filename, "output/frame%04d-avg.jpg", debug_output_frame % 50);
+        sprintf(jpeg_filename, "output/frame-avg.jpg");
         printf("FRAME: Saving average: %s\n", jpeg_filename);
+        highlight_areas(average_frame);
         save_jpeg(average_frame, jpeg_filename);
 
-        debug_output_frame ++;
+        // debug_output_frame ++;
     }
 
     jpeg_frame_index ++;
