@@ -306,7 +306,7 @@ void check_area_motion(Area *area) {
 
     if (area->trig) {
         // printf("MOTION: area triggered - diff_sum=%6d/%6d percent=%1.2f %1.2f\n", diff_sum, diff_max, area->percent_motion, area->treshold_percent);
-        osc_send(area->message, area->percent_motion);
+        osc_send(area->message, area->percent_motion - area->treshold_percent);
     }
 }
 
