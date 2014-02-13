@@ -15,8 +15,8 @@ Makefile
 
 all: mini
 
-mini: mini.c
-    gcc -o mini -O2 mini.c
+mini: mini.cpp
+    g++ -o mini -O9 -ljpeg -fpermissive mini.cpp
 
 */
 
@@ -36,6 +36,13 @@ mini: mini.c
 #include <signal.h>
 #include <linux/types.h>
 #include <linux/videodev2.h>
+
+#include <jpeglib.h>
+
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <netinet/ip.h>
+#include <arpa/inet.h>
 
 struct geometry {
   int w, h, size;
@@ -77,6 +84,80 @@ size_t greysize;
 // int vbytesperline;
 
 
+
+char osc_ip[100] = "127.0.0.1";
+int osc_port = 8003;
+int osc_socket;
+struct sockaddr_in si_me;
+
+void osc_init() {
+    printf("OSC: Using host \"%s\", port %d\n", osc_ip, osc_port);
+    osc_socket = socket(AF_INET, SOCK_DGRAM, 0);
+    memset((char *) &si_me, 0, sizeof(si_me));
+    si_me.sin_family = AF_INET;
+    si_me.sin_port = htons(osc_port);
+    si_me.sin_addr.s_addr = htonl(INADDR_ANY);
+    if (inet_aton(osc_ip, &si_me.sin_addr)==0) {
+        printf("OSC: Can't resolve ip.\n");
+    }
+}
+
+
+void osc_send(char *msg, float amt) {
+    // printf("OSC: Sending message \"%s\" with value %1.1f\n", msg, amt);
+
+    unsigned char msgbuf[100];
+    memset(msgbuf, 0, 100);
+
+    // strcpy((char *)&msgbuf, "hej\n");
+
+    int o = 0;
+
+    memcpy(msgbuf+o, msg, strlen(msg));
+    o += strlen(msg);
+
+    o += 4 - (o % 4);
+
+    char *typestring = (char *)",f";
+
+    memcpy(msgbuf+o, typestring, strlen(typestring));
+    o += strlen(typestring);
+
+    o += 4 - (o % 4);
+
+    char minibuf[4];
+    memcpy((char *)&minibuf, (unsigned char *)&amt, 4);
+
+    msgbuf[o] = minibuf[3];
+    msgbuf[o+1] = minibuf[2];
+    msgbuf[o+2] = minibuf[1];
+    msgbuf[o+3] = minibuf[0];
+    // memcpy(msgbuf+o, (unsigned char *)&amt, 4);
+    o += 4;
+
+    // o += 4 - (o % 4);
+
+    /*
+    for(int i=0; i<o; i++) {
+        char c = msgbuf[i];
+        printf("%02X ", c);
+    }
+    printf("\n");
+
+    for(int i=0; i<o; i++) {
+        char c = msgbuf[i];
+        if (c > 32 && c < 128)
+            printf("%C  ", c);
+        else
+            printf("?  ");
+    }
+    printf("\n");
+    */
+
+    if (sendto(osc_socket, (const char *)msgbuf, o, 0, (sockaddr*)&si_me, sizeof(si_me)) == -1) {
+        printf("OSC: Failed to send.\n");
+    }
+}
 
 void YUV422_to_grey(unsigned char *src, unsigned char *dst, int w, int h) {
     unsigned char *writehead, *readhead;
@@ -145,7 +226,7 @@ int vid_detect(char *devfile) {
     fprintf(stderr,"Device detected is %s\n",devfile);
     fprintf(stderr,"Card name: %s\n",capability.card);
 
-    video_set_format(fd, 320, 240, V4L2_PIX_FMT_YUYV); // V4L2_PIX_FMT_MJPEG
+    video_set_format(fd, 900, 400, V4L2_PIX_FMT_YUYV); // V4L2_PIX_FMT_MJPEG
 
     memset(&format, 0, sizeof(format));
     format.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
@@ -232,7 +313,7 @@ int vid_init() {
     }
 }
 
-char *brichars = " .:o$";
+char *brichars = " .-:+*o8";
 
 void grab_one () {
     int i, bri;
@@ -249,7 +330,7 @@ void grab_one () {
     for(i=0; i<120; i++) {
         x = (i * gw) / 120;
         o = (y * gw) + x;
-        bri = (grey[o] * 5 / 256);
+        bri = (grey[o] * 8 / 256);
         // printf("%d", bri);
         printf("%c", brichars[bri]);
         // printf("%03d %03d %03d\n", grey[0], grey[1], grey[2]);
@@ -259,6 +340,44 @@ void grab_one () {
         perror ("VIDIOC_QBUF");
         exit (EXIT_FAILURE);
     }
+}
+
+
+void save_jpeg(char *filename) {
+    // bool ipl2jpeg(IplImage *frame, unsigned char **outbuffer, long unsigned int *outlen) {
+
+    // unsigned char *outdata = (uchar *) frame->imageData;
+    struct jpeg_compress_struct cinfo = {0};
+    struct jpeg_error_mgr jerr;
+    JSAMPROW row_ptr[1];
+    int row_stride;
+
+    FILE *fp = fopen(filename, "wb");
+
+    cinfo.err = jpeg_std_error(&jerr);
+    jpeg_create_compress(&cinfo);
+    jpeg_stdio_dest(&cinfo, fp);
+
+    cinfo.image_width = gw;
+    cinfo.image_height = gh;
+    cinfo.input_components = 1;
+    cinfo.in_color_space = JCS_GRAYSCALE; // JCS_RGB;
+    jpeg_set_quality(&cinfo, 95, FALSE);
+
+    jpeg_set_defaults(&cinfo);
+    jpeg_start_compress(&cinfo, TRUE);
+    row_stride = gw * 3;
+
+    while (cinfo.next_scanline < cinfo.image_height) {
+        row_ptr[0] = grey + cinfo.next_scanline * gw;// image + (cinfo.next_scanline * row_stride);
+ //       jpeg_write_scanlines(&cinfo, row_ptr, 1);
+        jpeg_write_scanlines(&cinfo, row_ptr, 1);
+    }
+
+    jpeg_finish_compress(&cinfo);
+    jpeg_destroy_compress(&cinfo);
+
+    fclose(fp);
 }
 
 
@@ -290,6 +409,8 @@ int main (int argc, char **argv) {
 
     fprintf(stderr,"\n");
 
+    osc_init();
+
     gettimeofday(&start, NULL);
 
     while (userbreak <1) {
@@ -310,7 +431,20 @@ int main (int argc, char **argv) {
 
         fps = (framenum-1)/(ts.tv_usec+1000000.0*ts.tv_sec)*1000000.0;
 
+        printf(" ] [ ");
+
+        // every zone...
+
         printf(" ] %1.1f fps\n", fps);
+
+        if (framenum % 10 == 0) {
+            save_jpeg("dummy.jpg");
+        }
+
+        if (framenum % 15 == 0) {
+            // save_jpeg("dummy.jpg");
+            osc_send("/motion/1", 100);
+        }
 
     }
 
