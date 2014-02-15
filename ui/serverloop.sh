@@ -3,7 +3,7 @@
 while [ 1 ]
 do
 
-	./mmnew konsert.config
+	node server.js
 	sleep 1
 
 done

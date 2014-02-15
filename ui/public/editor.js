@@ -148,7 +148,7 @@ $(function() {
 		var h = e.offsetY - starty;
 		if (w > 3 && h > 3) {
 			var config = $('textarea#config').val();
-			config += 'area '+startx+' '+starty+' '+w+' '+h+' 5 100 /motion/1\n';
+			config += '\narea '+startx+' '+starty+' '+w+' '+h+' 100 5000 /motion/1\n';
 			$('textarea#config').val(config);
 			reloadareas();
 		}
@@ -156,5 +156,20 @@ $(function() {
 
 	$('textarea#config').on('blur', reloadareas);
 	$('textarea#config').on('keyup', reloadareas);
+
+	function reloadstat() {
+		$.ajax({
+			method: 'GET',
+			url: '/stat.json',
+			dataType: 'json',
+			success: function(r) {
+				console.log('Stat.json response:', r);
+				$('pre#stat').text(JSON.stringify(r, null, 2));
+			}
+		});
+		setTimeout(reloadstat, 500);
+	}
+
+	reloadstat();
 
 });

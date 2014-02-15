@@ -21,11 +21,26 @@
 	    </nav>
 
 		<div class="row">
-			<div class="col-lg-8">
+			<div class="col-lg-6">
 				<textarea id="config" rows="15" style="width:100%;">
 				</textarea>
+
+				<div class="preview">
+					<img id="preview" />
+					<div class="areas">
+					</div>
+				</div>
+				<div class="checkbox">
+					<label>
+						<input type="checkbox" checked id="refresh" /> Load preview image
+					</label>
+				</div>
+
 			</div>
-			<div class="col-lg-4">
+			<div class="col-lg-3">
+				<pre id="stat">[]</pre>
+			</div>
+			<div class="col-lg-3">
 				<pre>
 # snapshot PATH
 snapshot /tmp/snapshot.jpg
@@ -41,26 +56,6 @@ area 0 70 40 40 5.0 /motion/1
 area 40 70 40 40 5.0 /motion/2
 				</pre>
 
-			</div>
-		</div>
-	</div>
-	<br/>
-
-	<div class="container-fluid">
-		<div class="row">
-			<div class="col-lg-12">
-
-				<div class="preview">
-					<img id="preview" />
-					<div class="areas">
-					</div>
-				</div>
-				<div class="checkbox">
-						<label>
-							<input type="checkbox" checked id="refresh" /> Load preview image
-						</label>
-					</div>
-	
 			</div>
 		</div>
 	</div>

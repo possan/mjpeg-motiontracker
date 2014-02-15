@@ -14,9 +14,8 @@
 #include <netinet/ip.h>
 #include <arpa/inet.h>
 
-
-char osc_ip[100] = "127.0.0.1";
-int osc_port = 8003;
+char osc_ip[100];
+int osc_port;
 int osc_socket;
 struct sockaddr_in si_me;
 
@@ -33,7 +32,6 @@ void osc_init(const char *hostname, int port) {
         printf("OSC: Can't resolve ip.\n");
     }
 }
-
 
 void osc_send(const char *msg, float amt) {
     // printf("OSC: Sending message \"%s\" with value %1.1f\n", msg, amt);

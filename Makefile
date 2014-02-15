@@ -20,10 +20,10 @@ else
 	gcc -O2 -o mm-msg mm-msg.cpp -ljpeg -lcurl -I/usr/local/Cellar/jpeg/8d/include/ -L/usr/local/Cellar/jpeg/8d/lib -I/usr/local/Cellar/curl/7.33.0/include/curl/ -L/usr/local/Cellar/curl/7.33.0/lib
 endif
 
-mmnew: mmnew.cpp osc.cpp config.cpp capture.cpp
+mmnew: mmnew.cpp osc.cpp osc.h capture.cpp capture.h bitmap.cpp bitmap.h areas.cpp areas.h
 ifneq (, $(findstring linux, $(SYS)))
 	# gcc -O9 -o mm-msg mm-msg.cpp -lrt -ljpeg -lcurl
-	gcc -O9 -o mmnew -ljpeg -lzmq -fpermissive -I. osc.cpp capture.cpp mmnew.cpp
+	gcc -O9 -o mmnew -ljpeg -lzmq -fpermissive -I. osc.cpp capture.cpp areas.cpp bitmap.cpp mmnew.cpp
 else
 	# gcc -O9 -o mm-msg mm-msg.cpp -ljpeg -lcurl
 	gcc -O2 -o mmnew -ljpeg -I. \
@@ -32,7 +32,7 @@ else
 		-L/usr/local/Cellar/zeromq/3.2.4/lib \
 		-I/usr/local/Cellar/zeromq/3.2.4/include \
 		-lzmq \
-		config.cpp osc.cpp capture.cpp mmnew.cpp
+		osc.cpp capture.cpp areas.cpp bitmap.cpp mmnew.cpp
 endif
 
 clean:

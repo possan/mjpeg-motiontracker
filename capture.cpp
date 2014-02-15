@@ -7,48 +7,35 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <ctype.h>
+#include "bitmap.h"
 
 #ifdef __MACH__
 
 // Darwin dummy impl.
 
-int gw, gh;
-unsigned char *gray;
+BITMAP *bmp;
 
 bool capture_start(int width, int height) {
-	gw = width;
-	gh = height;
-	gray = (unsigned char *)malloc(width * height);
+    printf("CAPTURE: Start capturing %d x %d\n", width, height);
+    bmp = bitmap_init(width, height, 1);
 	return true;
 }
 
 void capture_wait() {
 	int i;
-	for(i = 0; i < gw * gh; i ++) {
-		gray[i] = rand() % 255;
+	for(i = 0; i < bmp->stride * bmp->height; i ++) {
+		bmp->buffer[i] = rand() % 255;
 	}
 	// no delay.
     usleep(100000); // ~10fps
 }
 
-int capture_width() {
-	return gw;
-}
-
-int capture_stride() {
-	return gw;
-}
-
-int capture_height() {
-	return gh;
-}
-
-unsigned char *capture_pointer() {
-	return gray;
+BITMAP *capture_bitmap() {
+	return bmp;
 }
 
 void capture_stop() {
-	free(gray);
+	bitmap_free(bmp);
 }
 
 #endif
@@ -180,8 +167,8 @@ int vid_detect(char *devfile, int w, int h) {
         exit(EXIT_FAILURE);
     }
 
-    printf("Current capture is %u x %u\n", format.fmt.pix.width, format.fmt.pix.height);
-    printf("format %4.4s, %u bytes-per-line\n", (char*)&format.fmt.pix.pixelformat, format.fmt.pix.bytesperline);
+    printf("CAPTURE: Actual size is %u x %u\n", format.fmt.pix.width, format.fmt.pix.height);
+    printf("CAPTURE: format %4.4s, %u bytes-per-line\n", (char*)&format.fmt.pix.pixelformat, format.fmt.pix.bytesperline);
 
     return 1;
 }
@@ -190,6 +177,8 @@ char *brichars = " .-:+*o8";
 
 
 bool capture_start(int width, int height) {
+
+    printf("CAPTURE: Request capture %d x %d\n", width, height);
 
 	int i;
     char temp[160];
@@ -320,22 +309,6 @@ void capture_wait() {
         perror ("VIDIOC_QBUF");
         exit (EXIT_FAILURE);
     }
-}
-
-int capture_width() {
-	return gw;
-}
-
-int capture_stride() {
-	return gw;
-}
-
-int capture_height() {
-	return gh;
-}
-
-unsigned char *capture_pointer() {
-	return grey;
 }
 
 void capture_stop() {
