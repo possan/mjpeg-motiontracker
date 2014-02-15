@@ -1,0 +1,23 @@
+div.preview {
+	position: relative;
+}
+
+
+div.preview div.areas {
+	position: absolute;
+	left: 0px;
+	top: 0px;
+}
+
+div.preview div.areas div.area {
+	position: absolute;
+	left: 0px;
+	top: 0px;
+	width: 100px;
+	height: 100px;
+	overflow: hidden;
+	color: #0f0;
+	text-align: right;
+	border: 1px solid #0f0;
+	background-color: rgba(0,128,0,0.5);
+}
