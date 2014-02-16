@@ -67,27 +67,19 @@ $(function() {
 
 	function reloadpreview() {
 		if ($('input#refresh').is(':checked')) {
-			switch(tick % 5) {
-				case 0:
-					snapshot();
-					break;
-				default:
-					var url = '/preview.jpg?r='+Math.random();
-					var i = new Image();
-					i.src = url;
-					i.onload = function() {
-						$('div.preview img#preview').attr('src', url);
-					};
-					break;
-			}
+			var url = '/preview.jpg';//?x='+Math.random();
+			// var i = new Image();
+			// i.src = url;
+			// i.onload = function() {
+			$('div.preview img#preview').attr('src', url);
+			// };
 		}
 		tick ++;
-		setTimeout(reloadpreview, 500);
 	}
 
 	revert();
 
-	reloadpreview();
+	setInterval(reloadpreview, 500);
 
 	var mousestate = 0;
 	var dragel = undefined;
@@ -103,6 +95,7 @@ $(function() {
 		var config = $('textarea#config').val();
 		var lines = config.split('\n');
 		console.log(lines);
+		var idx = 0;
 		lines.forEach(function(line) {
 			var args = line.split(' ');
 			if (args.length > 6 && args[0] == 'area') {
@@ -114,8 +107,11 @@ $(function() {
 					width: args[3] + 'px',
 					height: args[4] + 'px'
 				});
-				ar.text(args[7]);
+				// ar.text(args[7]);
+				ar.attr('id', 'area'+idx);
+				ar.html('<i>'+ idx + '</i><b>0</b><span>...</span>');
 				parent.append(ar);
+				idx ++;
 			}
 		});
 	}
@@ -165,11 +161,18 @@ $(function() {
 			success: function(r) {
 				console.log('Stat.json response:', r);
 				$('pre#stat').text(JSON.stringify(r, null, 2));
+				r.forEach(function(item, idx) {
+					$('div#area'+idx+' b').text(item.percent);
+					if (item.percent > 0) {
+						$('div#area'+idx).addClass('highlight');
+					} else {
+						$('div#area'+idx).removeClass('highlight');
+					}
+				})
 			}
 		});
-		setTimeout(reloadstat, 500);
 	}
 
-	reloadstat();
+	setInterval(reloadstat, 500);
 
 });

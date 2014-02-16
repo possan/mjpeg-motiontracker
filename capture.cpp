@@ -55,6 +55,7 @@ void capture_stop() {
 #include <signal.h>
 #include <linux/types.h>
 #include <linux/videodev2.h>
+#include "bitmap.h"
 
 struct geometry {
   int w, h, size;
@@ -65,7 +66,7 @@ struct geometry vid_geo;
 int whchanged = 0;
 char device[256];
 
-/* buffers */
+BITMAP *bmp;
 unsigned char *image = NULL; /* mmapped */
 
 int buftype = V4L2_BUF_TYPE_VIDEO_CAPTURE;
@@ -81,11 +82,11 @@ struct {
 } *buffers;
 
 int fd = -1;
-unsigned char *grey;
+// unsigned char *grey;
 int xbytestep = 2;
 int ybytestep = 0;
 int renderhop=1, framenum=0; // renderhop is how many frames to guzzle before rendering
-int gw, gh; // number of cols/rows in grey intermediate representation
+// int gw, gh; // number of cols/rows in grey intermediate representation
 int vw, vh; // video w and h
 size_t greysize;
 // int vbytesperline;
@@ -95,8 +96,8 @@ void YUV422_to_grey(unsigned char *src, unsigned char *dst, int w, int h) {
     int x,y;
     writehead = dst;
     readhead  = src;
-    for(y=0; y<gh; ++y){
-        for(x=0; x<gw; ++x){
+    for(y=0; y<bmp->height; ++y){
+        for(x=0; x<bmp->width; ++x){
             *(writehead++) = *readhead;
             readhead += xbytestep;
         }
@@ -173,9 +174,6 @@ int vid_detect(char *devfile, int w, int h) {
     return 1;
 }
 
-char *brichars = " .-:+*o8";
-
-
 bool capture_start(int width, int height) {
 
     printf("CAPTURE: Request capture %d x %d\n", width, height);
@@ -185,11 +183,6 @@ bool capture_start(int width, int height) {
     struct timeval start, ts;
     float fps;
 
-    if (signal (SIGINT, quitproc) == SIG_ERR) {
-        perror ("Couldn't install SIGINT handler");
-        exit (1);
-    }
-
     struct stat st;
     if( stat("/dev/video",&st) < 0) {
         strcpy(device,"/dev/video0");
@@ -198,8 +191,7 @@ bool capture_start(int width, int height) {
         strcpy(device,"/dev/video");
     }
 
-    if( vid_detect(device) > 0 ) {
-
+    if( vid_detect(device, width, height) > 0 ) {
 
        //  vid_init();
 
@@ -207,12 +199,10 @@ bool capture_start(int width, int height) {
 
 	    vw = format.fmt.pix.width;
 	    vh = format.fmt.pix.height;
-	    gw = vw;
-	    gh = vh;
+	    // gw = vw;
+	    // gh = vh;
 
-	    greysize = gw * gh;
-	    grey = malloc(greysize);
-	    printf("Grey buffer is %i bytes\n", greysize);
+        bmp = bitmap_init(vw, vh, 1);
 
 	    memset (&reqbuf, 0, sizeof (reqbuf));
 	    reqbuf.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
@@ -236,6 +226,7 @@ bool capture_start(int width, int height) {
 	        exit (EXIT_FAILURE);
 	    }
 
+        printf("CAPTURE: Setting up %d buffers..\n", reqbuf.count);
 	    for (i = 0; i < reqbuf.count; i++) {
 	        memset (&buffer, 0, sizeof (buffer));
 	        buffer.type = reqbuf.type;
@@ -279,6 +270,7 @@ bool capture_start(int width, int height) {
         exit(-1);
     }
 
+    printf("CAPTURE: Ready.");
 }
 
 void capture_wait() {
@@ -292,18 +284,7 @@ void capture_wait() {
         exit (EXIT_FAILURE);
     }
 
-    YUV422_to_grey(buffers[buffer.index].start, grey, vw, vh);
-    /*
-    y = (framenum * 15) % gh;// / 2;
-    for(i=0; i<120; i++) {
-        x = (i * gw) / 120;
-        o = (y * gw) + x;
-        bri = (grey[o] * 8 / 256);
-        // printf("%d", bri);
-        printf("%c", brichars[bri]);
-        // printf("%03d %03d %03d\n", grey[0], grey[1], grey[2]);
-    }
-    */
+    YUV422_to_grey(buffers[buffer.index].start, bmp->buffer, vw, vh);
 
     if (-1 == ioctl (fd, VIDIOC_QBUF, &buffer)) {
         perror ("VIDIOC_QBUF");
@@ -312,8 +293,13 @@ void capture_wait() {
 }
 
 void capture_stop() {
-	free(grey);
-    if(fd>0) close(fd);
+	if(fd>0) close(fd);
+    bitmap_free(bmp);
 }
+
+BITMAP *capture_bitmap() {
+    return bmp;
+}
+
 
 #endif

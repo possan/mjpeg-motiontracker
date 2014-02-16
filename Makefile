@@ -23,15 +23,12 @@ endif
 mmnew: mmnew.cpp osc.cpp osc.h capture.cpp capture.h bitmap.cpp bitmap.h areas.cpp areas.h
 ifneq (, $(findstring linux, $(SYS)))
 	# gcc -O9 -o mm-msg mm-msg.cpp -lrt -ljpeg -lcurl
-	gcc -O9 -o mmnew -ljpeg -lzmq -fpermissive -I. osc.cpp capture.cpp areas.cpp bitmap.cpp mmnew.cpp
+	gcc -O9 -o mmnew -ljpeg -fpermissive -I. osc.cpp capture.cpp areas.cpp bitmap.cpp mmnew.cpp
 else
 	# gcc -O9 -o mm-msg mm-msg.cpp -ljpeg -lcurl
 	gcc -O2 -o mmnew -ljpeg -I. \
 		-I/usr/local/Cellar/jpeg/8d/include/ \
 		-L/usr/local/Cellar/jpeg/8d/lib \
-		-L/usr/local/Cellar/zeromq/3.2.4/lib \
-		-I/usr/local/Cellar/zeromq/3.2.4/include \
-		-lzmq \
 		osc.cpp capture.cpp areas.cpp bitmap.cpp mmnew.cpp
 endif
 

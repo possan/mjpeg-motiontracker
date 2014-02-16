@@ -17,7 +17,20 @@ div.preview div.areas div.area {
 	height: 100px;
 	overflow: hidden;
 	color: #0f0;
-	text-align: right;
+	text-align: center;
 	border: 1px solid #0f0;
 	background-color: rgba(0,128,0,0.5);
+}
+
+div.preview div.areas div.area b {
+	display: block;
+}
+
+div.preview div.areas div.area i {
+	display: block;
+}
+
+div.preview div.areas div.area.highlight {
+	background-color: rgba(160,128,0,0.5);
+	color: #ff0;
 }

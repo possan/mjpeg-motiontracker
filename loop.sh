@@ -3,7 +3,7 @@
 while [ 1 ]
 do
 
-	./mmnew konsert.config
+	./mmnew demo.config
 	sleep 1
 
 done

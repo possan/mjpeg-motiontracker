@@ -29,6 +29,7 @@ mini: mini.cpp
 #include <fcntl.h>
 #include <ctype.h>
 #include <sys/time.h>
+#include <signal.h>
 
 #include "capture.h"
 #include "osc.h"
@@ -36,12 +37,15 @@ mini: mini.cpp
 #include "areas.h"
 
 #include <jpeglib.h>
-#include <zmq.h>
+// #include <zmq.h>
 
-volatile sig_atomic_t userbreak;
+volatile int userbreak;
+char brichars[] = " .-:+*o8";
 
-char config_snapshot_filename[100] = "snapshot.jpg";
-char config_stats_filename[100] = "stats.json";
+char config_snapshot_temp_filename[100] = "/var/tmp/snapshottemp.jpg";
+char config_snapshot_filename[100] = "/var/tmp/snapshot.jpg";
+char config_overlay_filename[100] = "/var/tmp/overlay.jpg";
+char config_stats_filename[100] = "/var/tmp/stats.json";
 char config_osc_hostname[100] = "127.0.0.1";
 int config_osc_port = 8003;
 int config_areas_average = 4;
@@ -85,7 +89,7 @@ void save_jpeg(BITMAP *bmp, const char *filename) {
     fclose(fp);
 }
 
-char brichars[] = " .-:+*o8";
+/*
 void *context;
 void *responder;
 
@@ -154,6 +158,7 @@ void server_poll() {
 
     }
 }
+*/
 
 void motion_callback(int area, char *prefix, int motion) {
     printf("MOTION CALLBACK: %d %s %d\n", area, prefix, motion);
@@ -258,10 +263,11 @@ int main (int argc, char **argv) {
     }
 
     gettimeofday(&start, NULL);
-    server_start(9999);
+    // server_start(9999);
 
     while (userbreak < 1) {
-        server_poll();
+
+        // server_poll();
         capture_wait();
 
         BITMAP *bmp = capture_bitmap();
@@ -269,7 +275,7 @@ int main (int argc, char **argv) {
         areas_check( bmp, &motion_callback );
 
         printf("%08d: [ ", framenum);
-        y = (framenum * 15) % bmp->height;// / 2;
+        y = (framenum * 20) % bmp->height;// / 2;
         for(i=0; i<80; i++) {
             x = (i * bmp->width) / 80;
             o = (y * bmp->stride) + x;
@@ -289,10 +295,21 @@ int main (int argc, char **argv) {
         // every zone...
         printf(" ] %1.1f fps\n", fps);
 
-        if (framenum % 20 == 0) {
+        if (framenum % 5 == 0) {
             // save_jpeg(bmp, "dummy.jpg");
-            save_jpeg(capture_bitmap(), config_snapshot_filename);
+            save_jpeg(areas_output_bitmap(), config_snapshot_temp_filename);
+            remove(config_snapshot_filename);
+            rename(config_snapshot_temp_filename, config_snapshot_filename);
         }
+
+        /*
+        if (framenum % 10 == 0) {
+            // save_jpeg(bmp, "dummy.jpg");
+            save_jpeg(capture_bitmap(), config_snapshot_temp_filename);
+            remove(config_snapshot_filename);
+            rename(config_snapshot_temp_filename, config_snapshot_filename);
+        }
+        */
 
         if (framenum % 5 == 0) {
             char ret[25000];
@@ -331,7 +348,7 @@ int main (int argc, char **argv) {
 
     areas_free();
     capture_stop();
-    server_stop();
+    // server_stop();
     exit (0);
 }
 

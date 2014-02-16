@@ -1,35 +1,11 @@
-var zmq = require('zmq'),
-	sock = zmq.socket('req'),
-	express = require('express'),
+var express = require('express'),
 	fs = require('fs'),
-	util=require('util'),
-	exec=require('child_process').exec;
+	util = require('util'),
+	exec = require('child_process').exec;
 
-var configfile = '../konsert.config';
-var snapshotfile = '../snapshot.jpg';
-var statusfile = '../stats.json';
-var last_stat = '[]';
-
-sock.connect('tcp://127.0.0.1:9999');
-
-sock.on('message', function(data) {
-	data = data.toString();
-    console.log('response from tracker:', data);
-    if (data.substring(0, 7) == 'status:') {
-    	console.log('got status', data.substring(7));
-    	last_stat = data.substring(7);
-    }
-});
-
-/* setInterval(function() {
-	console.log('Sending ping request..');
-	sock.send('ping');
-}, 10000);
-
-setInterval(function() {
-	console.log('Sending stat request..');
-	sock.send('stat');
-}, 1000); */
+var configfile = '../demo.config';
+var snapshotfile = '/var/tmp/snapshot.jpg';
+var statusfile = '/var/tmp/stats.json';
 
 var app = express();
 
@@ -46,39 +22,34 @@ app.post('/config.txt', function(req, res) {
 });
 
 app.get('/config.txt', function(req, res) {
-	var content = fs.readFileSync(configfile, 'UTF-8');
-	res.send(content);
+	res.sendfile(configfile, {'root': '.'});
 });
 
 app.post('/restart', function(req, res) {
 	console.log('Sending restart request..');
 	res.send('ok');
-	// sock.send('restart');
 	exec('killall mmnew',function(err,stdout,stderr) {
 		console.log(err, stdout, stderr);
-
-		process.exit(1);
 	});
 });
 
-app.post('/trigger/:index', function(req, res) {
-	console.log('Sending trigger ' + req.params.index + ' request..');
-	sock.send('trigger,'+req.params.index);
-	res.send('ok');
-});
-
-app.post('/snapshot', function(req, res) {
-	console.log('Sending snapshot request..');
-	sock.send('snapshot');
-	res.send('ok');
-});
-
 app.get('/preview.jpg', function(req, res) {
-	res.sendfile(snapshotfile, {'root': '.'});
+	var content = fs.readFileSync(snapshotfile);
+	res.setHeader('Cache-Control', 'public, max-age=0');
+	res.setHeader('Content-Type', 'image/jpeg');
+	res.setHeader('Content-Length', content.length);
+	res.setHeader("Connection", "close");
+	res.send(content);
+	res.end();
 });
 
 app.get('/stat.json', function(req, res) {
-	res.sendfile(statusfile, {'root': '.'});
+	var content = fs.readFileSync(statusfile);
+	res.setHeader('Cache-Control', 'public, max-age=0');
+	res.setHeader('Content-Type', 'application/json');
+	res.setHeader("Connection", "close");
+	res.send(content);
+	res.end();
 });
 
 app.listen(8000);
