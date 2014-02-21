@@ -1,11 +1,16 @@
+if (process.argv.length < 3) {
+	console.log('Syntax: node server.js [configfile] [snapshotfile] [statsfile]');
+	process.exit(1);
+}
+
 var express = require('express'),
 	fs = require('fs'),
 	util = require('util'),
 	exec = require('child_process').exec;
 
-var configfile = '../demo.config';
-var snapshotfile = '/var/tmp/snapshot.jpg';
-var statusfile = '/var/tmp/stats.json';
+var configfile = process.argv[2]; // '../demo.config';
+var snapshotfile = process.argv[3]; // '/var/tmp/snapshot.jpg';
+var statusfile = process.argv[4]; // '/var/tmp/stats.json';
 
 var app = express();
 
@@ -22,7 +27,13 @@ app.post('/config.txt', function(req, res) {
 });
 
 app.get('/config.txt', function(req, res) {
-	res.sendfile(configfile, {'root': '.'});
+	var content = fs.readFileSync(configfile);
+	res.setHeader('Cache-Control', 'public, max-age=0');
+	res.setHeader('Content-Type', 'text/plain');
+	res.setHeader('Content-Length', content.length);
+	res.setHeader("Connection", "close");
+	res.send(content);
+	res.end();
 });
 
 app.post('/restart', function(req, res) {

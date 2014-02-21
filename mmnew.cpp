@@ -246,15 +246,19 @@ int main (int argc, char **argv) {
         exit (1);
     }
 
-    if (argc != 2) {
-        printf("Syntax: mmnew [config file]\n");
+    if (argc != 4) {
+        printf("Syntax: mmnew [config file] [snapshot jpeg file] [stats json file]\n");
         exit (1);
     }
 
     areas_init();
 
-    read_config(argv[1]);
+    strcpy(config_snapshot_filename, argv[2]);
 
+    sprintf(config_snapshot_temp_filename, "%s.tmp", config_snapshot_filename);
+
+    strcpy(config_stats_filename, argv[3]);
+    read_config(argv[1]);
 
     areas_set_average_frames(config_areas_average);
     osc_init(config_osc_hostname, config_osc_port);
