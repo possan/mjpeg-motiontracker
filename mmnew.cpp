@@ -89,77 +89,6 @@ void save_jpeg(BITMAP *bmp, const char *filename) {
     fclose(fp);
 }
 
-/*
-void *context;
-void *responder;
-
-void server_start(int port) {
-    //  Socket to talk to clients
-    context = zmq_ctx_new ();
-    responder = zmq_socket (context, ZMQ_REP);
-    char url[20];
-    sprintf(url, "tcp://*:%d", port);
-    int rc = zmq_bind(responder, url);
-}
-
-void server_stop() {
-    zmq_close(responder);
-    zmq_ctx_destroy(context);
-}
-
-void server_poll() {
-    char buffer[100] = { 0, };
-    if (zmq_recv(responder, buffer, 100, ZMQ_DONTWAIT) == EAGAIN) {
-        return;
-    }
-    if (strlen(buffer) > 0) {
-        printf ("Received command: [%s]\n", buffer);
-
-        if (strcmp(buffer, "restart") == 0) {
-            zmq_send (responder, "ok", 2, 0);
-            userbreak = 1;
-        }
-
-        if (strcmp(buffer, "snapshot") == 0) {
-            // save snapshot
-            save_jpeg(capture_bitmap(), config_snapshot_filename);
-            zmq_send (responder, "ok", 2, 0);
-        }
-
-        if (strncmp(buffer, "trigger,", 7) == 0) {
-            // save snapshot
-            zmq_send (responder, "ok", 2, 0);
-            int index = atoi(buffer + 8); // trigger,NNNN
-            if (index >= 0 && index < areas_count()) {
-                Area *area = areas_get(index);
-                osc_send(area->message, 100);
-            }
-        }
-
-        if (strcmp(buffer, "stat") == 0) {
-            // save snapshot
-            char ret[5000];
-            strcpy(ret, "");
-            strcat(ret, "status:[ ");
-
-            for(int i=0; i<areas_count(); i++) {
-                Area *a = areas_get(i);
-                char buf[200];
-                sprintf(buf, "{ \"id\":%d, \"motion\":%d, \"percent\":%d }", i, a->motion, a->percent);
-
-                if (i > 0) {
-                    strcat(ret, ", ");
-                }
-                strcat(ret, buf);
-            }
-            strcat(ret, " ]");
-            zmq_send (responder, ret, strlen(ret), 0);
-        }
-
-    }
-}
-*/
-
 void motion_callback(int area, char *prefix, int motion) {
     printf("MOTION CALLBACK: %d %s %d\n", area, prefix, motion);
     osc_send(prefix, motion);
@@ -295,27 +224,23 @@ int main (int argc, char **argv) {
             ts.tv_usec += 1000000;
         }
         fps = (framenum-1)/(ts.tv_usec+1000000.0*ts.tv_sec)*1000000.0;
-        // printf(" ] [ ");
+        printf(" ][ ");
+
         // every zone...
-        printf(" ] %1.1f fps\n", fps);
+        for(i=0; i<areas_count(); i++) {
+            Area *a = areas_get(i);
+            printf("%3d%% ", a->percent);
+        }
+
+        printf("] %1.1f fps\n", fps);
 
         if (framenum % 5 == 0) {
-            // save_jpeg(bmp, "dummy.jpg");
             save_jpeg(areas_output_bitmap(), config_snapshot_temp_filename);
             remove(config_snapshot_filename);
             rename(config_snapshot_temp_filename, config_snapshot_filename);
         }
 
-        /*
-        if (framenum % 10 == 0) {
-            // save_jpeg(bmp, "dummy.jpg");
-            save_jpeg(capture_bitmap(), config_snapshot_temp_filename);
-            remove(config_snapshot_filename);
-            rename(config_snapshot_temp_filename, config_snapshot_filename);
-        }
-        */
-
-        if (framenum % 5 == 0) {
+        if (framenum % 2 == 0) {
             char ret[25000];
             char buf[200];
             char buf2[1200];
