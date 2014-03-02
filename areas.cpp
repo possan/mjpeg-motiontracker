@@ -103,27 +103,85 @@ void highlight_areas(unsigned char *temp) {
 }
 
 void update_average_and_diff(BITMAP *input) {
-    if (history_averageframes == 0) {
-        for(int o=0; o<average->stride * average->height; o++) {
-            average->buffer[o] = history1->buffer[o];
-        }
-    } else if (history_averageframes == 1) {
-        for(int o=0; o<average->stride * average->height; o++) {
-            average->buffer[o] = (history1->buffer[o] + history2->buffer[o]) >> 1;
-        }
-    } else if (history_averageframes == 2) {
-        for(int o=0; o<average->stride * average->height; o++) {
-            average->buffer[o] = (history1->buffer[o] + history2->buffer[o] + history3->buffer[o]) / 3;
-        }
-    } else {
-        for(int o=0; o<average->stride * average->height; o++) {
-            average->buffer[o] = (history1->buffer[o] + history2->buffer[o] + history3->buffer[o] + history4->buffer[o]) >> 2;
-        }
-    }
+  int o = 0, c;
+  int len = average->stride * average->height;
 
-    for(int o=0; o<average->stride * average->height; o++) {
-        diff->buffer[o] = abs(input->buffer[o] - average->buffer[o]);
+  if (history_averageframes == 0) {
+    unsigned char *avgptr = average->buffer;
+    unsigned char *h1ptr = history1->buffer;
+    c = len;
+    while (--c > 0) {
+      // average->buffer[o] = history1->buffer[o];
+      // o++;
+      *avgptr++ = *h1ptr++;
+      // *avgptr = *h1ptr;
+      // avgptr ++;
+      // h1ptr ++;
     }
+  } else if (history_averageframes == 1) {
+    unsigned char *avgptr = average->buffer;
+    unsigned char *h1ptr = history1->buffer;
+    unsigned char *h2ptr = history2->buffer;
+    c = len;
+    while (--c > 0) {
+      *avgptr++ = (*h1ptr++ + *h2ptr++) >> 1;
+      // *avgptr = (*h1ptr + *h2ptr) / 2;
+      // avgptr ++;
+      // h1ptr ++;
+      // h2ptr ++;
+      // average->buffer[o] = (history1->buffer[o] + history2->buffer[o]) >> 1;
+      // o++;
+    }
+  } else if (history_averageframes == 2) {
+    unsigned char *avgptr = average->buffer;
+    unsigned char *h1ptr = history1->buffer;
+    unsigned char *h2ptr = history2->buffer;
+    unsigned char *h3ptr = history3->buffer;
+    c = len;
+    while (--c > 0) {
+      *avgptr++ = (*h1ptr++ + *h2ptr++ + *h3ptr++) / 3;
+      // *avgptr = (*h1ptr + *h2ptr + *h3ptr) / 3;
+      // avgptr ++;
+      // h1ptr ++;
+      // h2ptr ++;
+      // h3ptr ++;
+      // average->buffer[o] = (history1->buffer[o] + history2->buffer[o] + history3->buffer[o]) / 3;
+      // o++;
+    }
+  } else {
+    unsigned char *avgptr = average->buffer;
+    unsigned char *h1ptr = history1->buffer;
+    unsigned char *h2ptr = history2->buffer;
+    unsigned char *h3ptr = history3->buffer;
+    unsigned char *h4ptr = history4->buffer;
+    c = len;
+    while (--c > 0) {
+      *avgptr++ = (*h1ptr++ + *h2ptr++ + *h3ptr++ + *h4ptr++) >> 2;
+      // *avgptr = (*h1ptr + *h2ptr + *h3ptr + *h4ptr) >> 2;
+      // avgptr ++;
+      // h1ptr ++;
+      // h2ptr ++;
+      // h3ptr ++;
+      // h4ptr ++;
+      // average->buffer[o] = (history1->buffer[o] + history2->buffer[o] + history3->buffer[o] + history4->buffer[o]) >> 2;
+      // o++;
+    }
+  }
+
+  {
+    unsigned char *diffptr = diff->buffer;
+    unsigned char *avgptr = average->buffer;
+    unsigned char *inptr = input->buffer;
+    c = len;
+    while (--c > 0) {
+      *diffptr++ = abs(*inptr++ - *avgptr++);
+      //  diffptr ++;
+      //  inptr ++;
+      //  avgptr ++;
+      // diff->buffer[o] = abs(input->buffer[o] - average->buffer[o]);
+      // o++;
+    }
+  }
 }
 
 void areas_init() {

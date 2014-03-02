@@ -90,7 +90,7 @@ void save_jpeg(BITMAP *bmp, const char *filename) {
 }
 
 void motion_callback(int area, char *prefix, int motion) {
-    printf("MOTION CALLBACK: %d %s %d\n", area, prefix, motion);
+    // printf("MOTION CALLBACK: %d %s %d\n", area, prefix, motion);
     osc_send(prefix, motion);
 }
 
@@ -234,7 +234,7 @@ int main (int argc, char **argv) {
 
         printf("] %1.1f fps\n", fps);
 
-        if (framenum % 5 == 0) {
+        if (framenum % 9 == 0) {
             save_jpeg(areas_output_bitmap(), config_snapshot_temp_filename);
             remove(config_snapshot_filename);
             rename(config_snapshot_temp_filename, config_snapshot_filename);
@@ -245,7 +245,7 @@ int main (int argc, char **argv) {
             char buf[200];
             char buf2[1200];
             char buf3[1200];
-            strcpy(ret, "[ ");
+            sprintf(ret, "{ \"fps\": %1.1f, \"areas\": [ ", fps);
             for(int i=0; i<areas_count(); i++) {
                 Area *a = areas_get(i);
                 strcpy(buf2, "");
@@ -268,11 +268,13 @@ int main (int argc, char **argv) {
                 }
                 strcat(ret, buf);
             }
-            strcat(ret, " ]");
+            strcat(ret, " ] }");
             FILE *f = fopen(config_stats_filename, "wt");
             fputs(ret, f);
             fclose(f);
         }
+
+        usleep(1000);
     }
 
     areas_free();
@@ -280,7 +282,3 @@ int main (int argc, char **argv) {
     // server_stop();
     exit (0);
 }
-
-
-
-
