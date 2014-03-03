@@ -8,7 +8,7 @@
 AREA_MOTION_CALLBACK area_callback = NULL;
 
 int history_averageframes = 0;
-int jpeg_frame_index = 0;
+int areas_frame_index = 0;
 
 BITMAP *history4;
 BITMAP *history3;
@@ -28,12 +28,15 @@ void check_area_motion(BITMAP *input, Area *area) {
 
     int diff_sum = 0;
     for(int j=0; j<area->height; j++) {
-        int o = (area->y + j) * diff->stride + (area->x * diff->channels);
-        for(int i=0; i<area->width; i++) {
-            for(int c=0; i<diff->channels; i++) {
-                diff_sum += diff->buffer[o];
-                o ++;
-            }
+        int y2 = area->y + j;
+        if (y2 >= 0 && y2 < input->height) {
+          int o = y2 * diff->stride + (area->x * diff->channels);
+          for(int i=0; i<area->width; i++) {
+              for(int c=0; i<diff->channels; i++) {
+                  diff_sum += diff->buffer[o];
+                  o ++;
+              }
+          }
         }
     }
     diff_sum /= diff->channels;
@@ -106,7 +109,7 @@ void update_average_and_diff(BITMAP *input) {
   int o = 0, c;
   int len = average->stride * average->height;
 
-  if (history_averageframes == 0) {
+  if (history_averageframes < 2) {
     unsigned char *avgptr = average->buffer;
     unsigned char *h1ptr = history1->buffer;
     c = len;
@@ -118,7 +121,7 @@ void update_average_and_diff(BITMAP *input) {
       // avgptr ++;
       // h1ptr ++;
     }
-  } else if (history_averageframes == 1) {
+  } else if (history_averageframes == 2) {
     unsigned char *avgptr = average->buffer;
     unsigned char *h1ptr = history1->buffer;
     unsigned char *h2ptr = history2->buffer;
@@ -132,7 +135,7 @@ void update_average_and_diff(BITMAP *input) {
       // average->buffer[o] = (history1->buffer[o] + history2->buffer[o]) >> 1;
       // o++;
     }
-  } else if (history_averageframes == 2) {
+  } else if (history_averageframes == 3) {
     unsigned char *avgptr = average->buffer;
     unsigned char *h1ptr = history1->buffer;
     unsigned char *h2ptr = history2->buffer;
@@ -148,7 +151,7 @@ void update_average_and_diff(BITMAP *input) {
       // average->buffer[o] = (history1->buffer[o] + history2->buffer[o] + history3->buffer[o]) / 3;
       // o++;
     }
-  } else {
+  } else { // 4 +
     unsigned char *avgptr = average->buffer;
     unsigned char *h1ptr = history1->buffer;
     unsigned char *h2ptr = history2->buffer;
@@ -192,9 +195,9 @@ void areas_init() {
 	history3 = bitmap_init(0, 0, 1);
 	history2 = bitmap_init(0, 0, 1);
 	history1 = bitmap_init(0, 0, 1);
-	average = bitmap_init(0, 0, 1);
+	average = bitmap_init(1, 1, 1);
 	diff = bitmap_init(0, 0, 1);
-	jpeg_frame_index = 0;
+	areas_frame_index = 0;
 }
 
 void areas_set_average_frames(int averageframes) {
@@ -259,23 +262,24 @@ void areas_check(BITMAP *input, AREA_MOTION_CALLBACK callback) {
     bitmap_resize(average, input->width, input->height);
     bitmap_resize(diff, input->width, input->height);
 
+    update_average_and_diff(input);
+
     bitmap_copy(history4, history3);
     bitmap_copy(history3, history2);
     bitmap_copy(history2, history1);
     bitmap_copy(history1, input);
 
-    update_average_and_diff(input);
 
-    if (jpeg_frame_index > 10) {
+    if (areas_frame_index > 10) {
 	    for(int i=0; i<num_areas; i++) {
 	        Area *area = (Area *)&areas[i];
 	        check_area_motion(input, area);
 	    }
     } else {
-        printf("MOTION: Skipping initial frame #%d\n", jpeg_frame_index);
+        printf("MOTION: Skipping initial frame #%d\n", areas_frame_index);
     }
 
-	jpeg_frame_index ++;
+	areas_frame_index ++;
 }
 
 BITMAP *areas_output_bitmap() {

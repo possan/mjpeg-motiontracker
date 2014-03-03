@@ -8,37 +8,8 @@
 #include <fcntl.h>
 #include <ctype.h>
 #include "bitmap.h"
+#include "capture.h"
 
-#ifdef __MACH__
-
-// Darwin dummy impl.
-
-BITMAP *bmp;
-
-bool capture_start(int width, int height) {
-    printf("CAPTURE: Start capturing %d x %d\n", width, height);
-    bmp = bitmap_init(width, height, 1);
-	return true;
-}
-
-void capture_wait() {
-	int i;
-	for(i = 0; i < bmp->stride * bmp->height; i ++) {
-		bmp->buffer[i] = rand() % 255;
-	}
-	// no delay.
-    usleep(100000); // ~10fps
-}
-
-BITMAP *capture_bitmap() {
-	return bmp;
-}
-
-void capture_stop() {
-	bitmap_free(bmp);
-}
-
-#endif
 #ifndef __MACH__
 
 // Linux impl.
@@ -168,21 +139,30 @@ int vid_detect(char *devfile, int w, int h) {
         exit(EXIT_FAILURE);
     }
 
-    printf("CAPTURE: Actual size is %u x %u\n", format.fmt.pix.width, format.fmt.pix.height);
-    printf("CAPTURE: format %4.4s, %u bytes-per-line\n", (char*)&format.fmt.pix.pixelformat, format.fmt.pix.bytesperline);
+    printf("VIDEO4LINUX CAPTURE: Actual size is %u x %u\n", format.fmt.pix.width, format.fmt.pix.height);
+    printf("VIDEO4LINUX CAPTURE: format %4.4s, %u bytes-per-line\n", (char*)&format.fmt.pix.pixelformat, format.fmt.pix.bytesperline);
 
     return 1;
 }
 
-bool capture_start(int width, int height) {
+class V4LCapture : public ICapture {
+public:
+	V4LCapture(const char *device, int width, int height);
+	~V4LCapture();
+	void wait();
+	BITMAP *bitmap();
+	bool eventloop(CaptureFrameCallback callback);
+};
 
-    printf("CAPTURE: Request capture %d x %d\n", width, height);
+Capture::V4LCapture(const char *device, int width, int height) {
+    printf("VIDEO4LINUX CAPTURE: Request capture %d x %d\n", width, height);
 
 	int i;
     char temp[160];
     struct timeval start, ts;
     float fps;
 
+	/*
     struct stat st;
     if( stat("/dev/video",&st) < 0) {
         strcpy(device,"/dev/video0");
@@ -190,6 +170,7 @@ bool capture_start(int width, int height) {
     else {
         strcpy(device,"/dev/video");
     }
+	*/
 
     if( vid_detect(device, width, height) > 0 ) {
 
@@ -226,7 +207,7 @@ bool capture_start(int width, int height) {
 	        exit (EXIT_FAILURE);
 	    }
 
-        printf("CAPTURE: Setting up %d buffers..\n", reqbuf.count);
+        printf("VIDEO4LINUX CAPTURE: Setting up %d buffers..\n", reqbuf.count);
 	    for (i = 0; i < reqbuf.count; i++) {
 	        memset (&buffer, 0, sizeof (buffer));
 	        buffer.type = reqbuf.type;
@@ -270,11 +251,15 @@ bool capture_start(int width, int height) {
         exit(-1);
     }
 
-    printf("CAPTURE: Ready.");
+    printf("VIDEO4LINUX CAPTURE: Ready.");
 }
 
-void capture_wait() {
+V4LVIDEO4LINUX Capture::~V4LCapture() {
+	if(fd>0) close(fd);
+    bitmap_free(bmp);
+}
 
+void V4LVIDEO4LINUX Capture::wait() {
 	int i, bri;
     int x, y;
     int o;
@@ -292,14 +277,18 @@ void capture_wait() {
     }
 }
 
-void capture_stop() {
-	if(fd>0) close(fd);
-    bitmap_free(bmp);
-}
-
-BITMAP *capture_bitmap() {
+BITMAP *V4LVIDEO4LINUX Capture::bitmap() {
     return bmp;
 }
 
+bool V4LCapture::block(CaptureFrameCallback callback) {
+	this->wait();
+	callback(bmp);
+	return true;
+}
+
+ICapture *create_video4linux_capture(const char *device, int width, int height) {
+	return new V4LCapture(device, width, height);
+}
 
 #endif

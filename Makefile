@@ -20,16 +20,15 @@ else
 	gcc -O2 -o mm-msg mm-msg.cpp -ljpeg -lcurl -I/usr/local/Cellar/jpeg/8d/include/ -L/usr/local/Cellar/jpeg/8d/lib -I/usr/local/Cellar/curl/7.33.0/include/curl/ -L/usr/local/Cellar/curl/7.33.0/lib
 endif
 
-mmnew: mmnew.cpp osc.cpp osc.h capture.cpp capture.h bitmap.cpp bitmap.h areas.cpp areas.h
+mmnew: mmnew.cpp osc.cpp osc.h capture.h bitmap.cpp bitmap.h areas.cpp areas.h capture_v4l.cpp capture_dummy.cpp capture_mjpeg.cpp
 ifneq (, $(findstring linux, $(SYS)))
-	# gcc -O9 -o mm-msg mm-msg.cpp -lrt -ljpeg -lcurl
-	gcc -O9 -o mmnew -ljpeg -fpermissive -I. osc.cpp capture.cpp areas.cpp bitmap.cpp mmnew.cpp
+	g++ -O9 -o mmnew -ljpeg -lcurl -fpermissive -I. \
+		osc.cpp areas.cpp bitmap.cpp mmnew.cpp capture_v4l.cpp capture_dummy.cpp capture_mjpeg.cpp
 else
-	# gcc -O9 -o mm-msg mm-msg.cpp -ljpeg -lcurl
-	gcc -O2 -o mmnew -ljpeg -I. \
+	g++ -O2 -o mmnew -ljpeg -lcurl -I. \
 		-I/usr/local/Cellar/jpeg/8d/include/ \
 		-L/usr/local/Cellar/jpeg/8d/lib \
-		osc.cpp capture.cpp areas.cpp bitmap.cpp mmnew.cpp
+		osc.cpp areas.cpp bitmap.cpp mmnew.cpp capture_v4l.cpp capture_dummy.cpp capture_mjpeg.cpp
 endif
 
 clean:

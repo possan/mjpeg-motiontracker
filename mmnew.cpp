@@ -1,22 +1,10 @@
-/* Based on HasciiCam code */
-
 /*
-UVC Ctrl
---------
 
-sudo uvcdynctrl -s "White Balance Temperature, Auto" 0 .5
-sudo uvcdynctrl -s "Gain" 100
-sudo uvcdynctrl -s "Exposure (Absolute)" 200
-sudo uvcdynctrl -s 'Focus, Auto' 0
-sudo uvcdynctrl -s 'Focus (absolute)' 0
+MotionTracker New
 
-Makefile
---------
+Based on HasciiCam code
 
-all: mini
-
-mini: mini.cpp
-    g++ -o mini -O9 -ljpeg -fpermissive mini.cpp
+./mmnew mmnew.conf /tmp/snapshot.jpg /tmp/snapshot.json§
 
 */
 
@@ -49,14 +37,20 @@ char config_stats_filename[100] = "/var/tmp/stats.json";
 char config_osc_hostname[100] = "127.0.0.1";
 int config_osc_port = 8003;
 int config_areas_average = 4;
-int config_capture_width = 640;
-int config_capture_height = 480;
+// int config_capture_width = 640;
+// int config_capture_height = 480;
+ICapture *capture = NULL;
+struct timeval start, ts;
+int framenum = 0;
 
 void quitproc (int sig) {
     fprintf (stderr, "interrupt caught, exiting.\n");
+    if (capture != NULL) {
+        delete(capture);
+        capture = NULL;
+    }
     userbreak = 1;
 }
-
 
 void save_jpeg(BITMAP *bmp, const char *filename) {
     struct jpeg_compress_struct cinfo = {0};
@@ -128,6 +122,7 @@ bool read_config(const char *filename) {
                 config_areas_average = atoi(str_average);
             }
         }
+        /*
         else if (strcmp(cmd, "capture") == 0) {
             char *str_width = strsep(&ptr, " \n\r");
             char *str_height = strsep(&ptr, " \n\r");
@@ -136,6 +131,7 @@ bool read_config(const char *filename) {
                 config_capture_height = atoi(str_height);
             }
         }
+        */
         else if (strcmp(cmd, "area") == 0) {
             char *str_x = strsep(&ptr, " \n\r");
             char *str_y = strsep(&ptr, " \n\r");
@@ -155,20 +151,129 @@ bool read_config(const char *filename) {
                     strdup(str_message)
                 );
             }
+        } else if(strcmp(cmd, "input") == 0) {
+            char *method = strsep(&ptr, " \n\r");
+            if (strcmp(method, "video4linux") == 0) {
+#ifndef __MACH__
+                char *str_path = strsep(&ptr, " \n\r");
+                char *str_width = strsep(&ptr, " \n\r");
+                char *str_height = strsep(&ptr, " \n\r");
+                if (str_path != NULL && str_width != NULL && str_height != NULL) {
+                    int config_capture_width = atoi(str_width);
+                    int config_capture_height = atoi(str_height);
+                    capture = create_video4linux_capture(str_path, config_capture_width, config_capture_height);
+                }
+#endif
+            } else if(strcmp(method, "mjpeg") == 0) {
+                char *str_url = strsep(&ptr, " \n\r");
+                char *str_auth = strsep(&ptr, " \n\r");
+                if (str_url != NULL) {
+                    capture = create_mjpeg_capture(str_url, str_auth);
+                }
+
+            } else if(strcmp(method, "dummy") == 0) {
+
+                char *str_width = strsep(&ptr, " \n\r");
+                char *str_height = strsep(&ptr, " \n\r");
+                if (str_width != NULL && str_height != NULL) {
+                    int config_capture_width = atoi(str_width);
+                    int config_capture_height = atoi(str_height);
+                    capture = create_dummy_capture(config_capture_width, config_capture_height);
+                }
+            }
         }
     }
     fclose(f);
     return true;
 }
 
-int main (int argc, char **argv) {
+void capture_callback(BITMAP *bmp) {
+    struct timeval ts;
     int i, bri;
     int x, y;
-    int o, framenum = 0;
-
-    char temp[160];
-    struct timeval start, ts;
+    int o;
     float fps;
+
+    areas_check(bmp, &motion_callback);
+
+    printf("%08d: [ ", framenum);
+    y = (framenum * 20) % bmp->height;// / 2;
+    for(i=0; i<80; i++) {
+        x = (i * bmp->width) / 80;
+        o = (y * bmp->stride) + x;
+        bri = (bmp->buffer[o] * 8 / 256);
+        printf("%c", brichars[bri]);
+    }
+    framenum ++;
+    gettimeofday(&ts, NULL);
+    ts.tv_sec -= start.tv_sec;
+    ts.tv_usec -= start.tv_usec;
+    if (ts.tv_usec < 0) {
+        ts.tv_sec--;
+        ts.tv_usec += 1000000;
+    }
+    fps = (framenum-1)/(ts.tv_usec+1000000.0*ts.tv_sec)*1000000.0;
+    printf(" ][ ");
+
+    // every zone...
+    for(i=0; i<areas_count(); i++) {
+        Area *a = areas_get(i);
+        printf("%3d%% ", a->percent);
+    }
+
+    printf("] %1.1f fps\n", fps);
+
+    if (framenum % 9 == 0) {
+        BITMAP *bmp2 = areas_output_bitmap();
+        if (bmp2 != NULL) {
+            // printf("save jpeg\n");
+            save_jpeg(bmp2, config_snapshot_temp_filename);
+            remove(config_snapshot_filename);
+            rename(config_snapshot_temp_filename, config_snapshot_filename);
+        }
+    }
+
+    if (framenum % 2 == 0) {
+        // printf("save stats\n");
+        float fps;
+        char ret[25000];
+        char buf[200];
+        char buf2[1200];
+        char buf3[1200];
+        sprintf(ret, "{ \"fps\": %1.1f, \"areas\": [ ", fps);
+        for(int i=0; i<areas_count(); i++) {
+            Area *a = areas_get(i);
+            strcpy(buf2, "");
+            strcpy(buf3, "");
+            for(int j=0; j<20; j++) {
+                if (j > 0) {
+                    strcat(buf2, ",");
+                    strcat(buf3, ",");
+                }
+
+                sprintf(buf, "%d", a->percent_history[j]);
+                strcat(buf2, buf);
+
+                sprintf(buf, "%d", a->trig_history[j]);
+                strcat(buf3, buf);
+            }
+            sprintf(buf, "{ \"id\":%d, \"motion\":%d, \"percent\":%d, \"percent_history\":[%s], \"trig_history\":[%s] }", i, a->motion, a->percent, buf2, buf3);
+            if (i > 0) {
+                strcat(ret, ", ");
+            }
+            strcat(ret, buf);
+        }
+        strcat(ret, " ] }");
+        FILE *f = fopen(config_stats_filename, "wt");
+        fputs(ret, f);
+        fclose(f);
+    }
+
+    usleep(1000);
+}
+
+int main (int argc, char **argv) {
+    char temp[160];
 
     if (signal (SIGINT, quitproc) == SIG_ERR) {
         perror ("Couldn't install SIGINT handler");
@@ -191,94 +296,34 @@ int main (int argc, char **argv) {
 
     areas_set_average_frames(config_areas_average);
     osc_init(config_osc_hostname, config_osc_port);
-    if (!capture_start(config_capture_width, config_capture_height)) {
+
+    if (capture == NULL) {
+        printf("Error: No capture device selected in config file:\n");
+        printf("\nSyntax:\n");
+        printf("\tinput video4linux /dev/video0 640 480\n");
+        printf("\tinput mjpeg http://user:pass@camera/image.mjpeg\n");
+        printf("\tinput dummy 640 480\n");
         exit(-1);
     }
+
+
 
     gettimeofday(&start, NULL);
     // server_start(9999);
 
     while (userbreak < 1) {
-
-        // server_poll();
-        capture_wait();
-
-        BITMAP *bmp = capture_bitmap();
-
-        areas_check( bmp, &motion_callback );
-
-        printf("%08d: [ ", framenum);
-        y = (framenum * 20) % bmp->height;// / 2;
-        for(i=0; i<80; i++) {
-            x = (i * bmp->width) / 80;
-            o = (y * bmp->stride) + x;
-            bri = (bmp->buffer[o] * 8 / 256);
-            printf("%c", brichars[bri]);
+        if (capture != NULL) {
+            capture->block(&capture_callback);
         }
-        framenum ++;
-        gettimeofday(&ts, NULL);
-        ts.tv_sec -= start.tv_sec;
-        ts.tv_usec -= start.tv_usec;
-        if (ts.tv_usec < 0) {
-            ts.tv_sec--;
-            ts.tv_usec += 1000000;
-        }
-        fps = (framenum-1)/(ts.tv_usec+1000000.0*ts.tv_sec)*1000000.0;
-        printf(" ][ ");
-
-        // every zone...
-        for(i=0; i<areas_count(); i++) {
-            Area *a = areas_get(i);
-            printf("%3d%% ", a->percent);
-        }
-
-        printf("] %1.1f fps\n", fps);
-
-        if (framenum % 9 == 0) {
-            save_jpeg(areas_output_bitmap(), config_snapshot_temp_filename);
-            remove(config_snapshot_filename);
-            rename(config_snapshot_temp_filename, config_snapshot_filename);
-        }
-
-        if (framenum % 2 == 0) {
-            char ret[25000];
-            char buf[200];
-            char buf2[1200];
-            char buf3[1200];
-            sprintf(ret, "{ \"fps\": %1.1f, \"areas\": [ ", fps);
-            for(int i=0; i<areas_count(); i++) {
-                Area *a = areas_get(i);
-                strcpy(buf2, "");
-                strcpy(buf3, "");
-                for(int j=0; j<20; j++) {
-                    if (j > 0) {
-                        strcat(buf2, ",");
-                        strcat(buf3, ",");
-                    }
-
-                    sprintf(buf, "%d", a->percent_history[j]);
-                    strcat(buf2, buf);
-
-                    sprintf(buf, "%d", a->trig_history[j]);
-                    strcat(buf3, buf);
-                }
-                sprintf(buf, "{ \"id\":%d, \"motion\":%d, \"percent\":%d, \"percent_history\":[%s], \"trig_history\":[%s] }", i, a->motion, a->percent, buf2, buf3);
-                if (i > 0) {
-                    strcat(ret, ", ");
-                }
-                strcat(ret, buf);
-            }
-            strcat(ret, " ] }");
-            FILE *f = fopen(config_stats_filename, "wt");
-            fputs(ret, f);
-            fclose(f);
-        }
-
-        usleep(1000);
     }
 
     areas_free();
-    capture_stop();
+
+    if (capture != NULL) {
+        delete(capture);
+        capture = NULL;
+    }
+
     // server_stop();
     exit (0);
 }
