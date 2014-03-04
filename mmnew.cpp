@@ -269,7 +269,7 @@ void capture_callback(BITMAP *bmp) {
         fclose(f);
     }
 
-    usleep(1000);
+    usleep(1);
 }
 
 int main (int argc, char **argv) {

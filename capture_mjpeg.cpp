@@ -31,6 +31,8 @@
 #define STATE_MAIN_HEADER 30
 #define STATE_FRAME_HEADER 36
 
+#define JPEG_BUFFER_SIZE 5*1024*1024
+
 BITMAP *bmp;
 
 int debug_output_frame = 0;
@@ -109,7 +111,7 @@ void decode_into_current(unsigned char *ptr, int len) {
         int oo = cinfo.output_scanline * bmp->stride;
         unsigned char *bytebuffer = buffer[0];
         for(int c=0; c<cinfo.output_width; c++) {
-            if (cinfo.output_components == 3) {
+            if (pixel_size == 3) {
                 bmp->buffer[oo] = (bytebuffer[oi] + bytebuffer[oi+1] + bytebuffer[oi+2]) / 3;
                 oi += 3;
                 oo ++;
@@ -128,25 +130,23 @@ void on_frame(unsigned char *ptr, int len) {
         current_callback(bmp);
     }
 
-    if ((fps_frame % 50) == 49) {
-        int t = (int)time(NULL);
-        float fps = (float)jpeg_frame_index / ((float)(t - fps_start));
-        printf("%1.1f FPS after %d frames.\n", fps, fps_frame);
-    }
-    fps_frame ++;
-
     jpeg_frame_index ++;
 }
 
-
+long total_bytes = 0;
 
 size_t write_data(void *ptr, size_t size, size_t nmemb, FILE *stream) {
     size_t written;
-    // unsigned char nbytes = size * nmemb;
-    // printf("got %d bytes...\n", nbytes);
 
-    for(int i=0; i<nmemb; i++) {
-        unsigned char b = ((unsigned char *)ptr)[i];
+    unsigned char *bptr = (unsigned char *)ptr;
+
+    long nbytes = size * nmemb;
+    printf("got %d bytes (%d, %d) (total %d)...\n", nbytes, size, nmemb, total_bytes);
+
+    total_bytes += nbytes;
+
+    for(int i=0; i<nbytes; i++) {
+        unsigned char b = bptr[i];
         // printf("byte #%d.%d %02x (%c)\n", block_counter, i, b, (b > 32 && b < 128) ? b : '?');
         // printf("%c", (b > 32 && b < 128) ? b : '?');
         if (g_state == STATE_MAIN_HEADER || g_state == STATE_FRAME_HEADER) {
@@ -178,11 +178,13 @@ size_t write_data(void *ptr, size_t size, size_t nmemb, FILE *stream) {
             }
         }
         else if (g_state == STATE_FRAME) {
-            jpeg_buffer[jpeg_frame_position] = b;
+            if (jpeg_frame_position < JPEG_BUFFER_SIZE) {
+                jpeg_buffer[jpeg_frame_position] = b;
+            }
             jpeg_frame_position ++;
-            // printf("position %d / %d\n", jpeg_frame_position, jpeg_frame_size);
             if (jpeg_frame_position >= jpeg_frame_size) {
-                // printf("end of frame.\n");
+                printf("position %d / %d\n", jpeg_frame_position, jpeg_frame_size);
+                printf("end of frame.\n");
                 on_frame(jpeg_buffer, jpeg_frame_size);
                 g_state = STATE_FRAME_HEADER;
                 memset(headerline, 0, 1000);
@@ -195,7 +197,7 @@ size_t write_data(void *ptr, size_t size, size_t nmemb, FILE *stream) {
     // written = fwrite(ptr, size, nmemb, stream);
 
     block_counter ++;
-    return nmemb;
+    return nbytes;
 }
 
 class MotionJpegCapture : public ICapture {
@@ -217,7 +219,7 @@ MotionJpegCapture::MotionJpegCapture(const char *url, const char *auth) {
     fps_start = (int)time(NULL);
     fps_frame = 0;
 
-    jpeg_buffer = (unsigned char *)malloc(6*1024*1024);
+    jpeg_buffer = (unsigned char *)malloc(JPEG_BUFFER_SIZE);
 }
 
 MotionJpegCapture::~MotionJpegCapture() {
@@ -227,6 +229,7 @@ MotionJpegCapture::~MotionJpegCapture() {
     }
     if (bmp != NULL) {
         bitmap_free(bmp);
+        bmp = NULL;
     }
     free(jpeg_buffer);
 }
